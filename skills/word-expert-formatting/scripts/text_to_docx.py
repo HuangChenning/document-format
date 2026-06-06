@@ -5,12 +5,35 @@ import argparse
 import re
 from pathlib import Path
 
-from docx import Document
-from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_LINE_SPACING
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
-from docx.shared import Cm, Pt
+DOCX_IMPORT_ERROR = None
+
+try:
+    from docx import Document
+    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_LINE_SPACING
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt
+except ImportError as exc:
+    DOCX_IMPORT_ERROR = exc
+    Document = None
+    WD_ALIGN_VERTICAL = None
+    WD_ROW_HEIGHT_RULE = None
+    WD_ALIGN_PARAGRAPH = None
+    WD_BREAK = None
+    WD_LINE_SPACING = None
+
+    def OxmlElement(*args, **kwargs):
+        raise RuntimeError('python-docx is required to build DOCX output')
+
+    def qn(name):
+        return name
+
+    def Cm(value):
+        return value
+
+    def Pt(value):
+        return value
 
 FONT_SONG = "宋体"
 FONT_HEI = "黑体"
@@ -41,11 +64,18 @@ CODE_RIGHT_INDENT = Cm(0.74)
 CODE_SHADE = "F2F2F2"
 TABLE_HEADER_SHADE = "D9EAF7"
 COVER_TOP_SPACER_COUNT = 6
-TEMPLATE_DOCX_PATH = Path('/Users/huangcn/github/document-format/2025-2026年度数据库运维服务总结_20260522_修改.docx')
+TOC_TITLE = "目录"
+TOC_HEADING_MARKERS = {"目录", "toc", "table of contents"}
+TXT_HEADING_MAX_LENGTH = 40
+SUPPORTED_INPUT_SUFFIXES = {'.md', '.markdown', '.txt'}
+NUMBERING_MODE_A = 'A'
+NUMBERING_MODE_B = 'B'
 TITLE_NUMBERING_ABSTRACT_ID = '700'
 TITLE_NUMBERING_ID = '701'
 BULLET_NUMBERING_ABSTRACT_ID = '702'
 BULLET_NUMBERING_ID = '703'
+TITLE_NUMBERING_MODE_B_ABSTRACT_ID = '704'
+TITLE_NUMBERING_MODE_B_ID = '705'
 
 
 class StyleSpec:
@@ -72,13 +102,33 @@ BODY_SPEC = StyleSpec(FONT_SONG, SIZE_BODY, "one_point_five", 0, 0, 2, None)
 TABLE_SPEC = StyleSpec(FONT_SONG, SIZE_TABLE, "one_point_five", 0, 0, 0, None)
 CODE_SPEC = StyleSpec(FONT_MONO, SIZE_CODE, "one_point_five", 6, 6, 0, None)
 PAGE_SPEC = StyleSpec(FONT_SONG, Pt(10.5), "one_point_five", 0, 0, 0, None)
+TOC_TITLE_SPEC = StyleSpec(FONT_HEI, SIZE_H1, "single", 10, 10, 0, True)
+TOC_ENTRY_SPEC = StyleSpec(FONT_SONG, SIZE_BODY, "one_point_five", 0, 0, 0, None)
 
 HEADING_RE = re.compile(r'^(#{1,6})\s+(.*)$')
 BULLET_RE = re.compile(r'^(\s*)[-*+]\s+(.*)$')
 ORDERED_RE = re.compile(r'^\s*\d+[.)]\s+(.*)$')
 LEADING_HEADING_NUMBER_RE = re.compile(r'^\s*((?:\d+\.)*\d+)\s+')
+TXT_NUMBERED_HEADING_RE = re.compile(r'^\s*((?:\d+\.)*\d+)\s+(.+?)\s*$')
+TXT_CHINESE_HEADING_RE = re.compile(r'^\s*([一二三四五六七八九十百千]+)、\s*(.+?)\s*$')
 COVER_LABEL_RE = re.compile(r'^\s*(?:\[(封面标题|封面公司/日期|公司名称|日期)\]|(封面标题|封面公司/日期|公司名称|日期))\s*[:：]\s*(.*)$')
 DATE_RE = re.compile(r'\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b|\b\d{4}年\d{1,2}月\d{1,2}日\b')
+
+
+class AnalysisResult:
+    def __init__(self, cover, body_lines, toc_exists: bool, toc_entries: list[tuple[int, str]]):
+        self.cover = cover
+        self.body_lines = body_lines
+        self.toc_exists = toc_exists
+        self.toc_entries = toc_entries
+
+
+class TxtBlock:
+    def __init__(self, kind: str, lines: list[str], level: int | None = None, title: str | None = None):
+        self.kind = kind
+        self.lines = lines
+        self.level = level
+        self.title = title
 
 
 def clear_document_body(doc: Document):
@@ -88,26 +138,73 @@ def clear_document_body(doc: Document):
             body.remove(child)
 
 
+def clear_header_footer_content(container):
+    element = container._element
+    for child in list(element):
+        if child.tag != qn('w:pPr'):
+            element.remove(child)
+
+
+def apply_section_page_setup(section):
+    section.page_width = A4_WIDTH
+    section.page_height = A4_HEIGHT
+    section.top_margin = PAGE_MARGIN_TOP
+    section.bottom_margin = PAGE_MARGIN_BOTTOM
+    section.left_margin = PAGE_MARGIN_LEFT
+    section.right_margin = PAGE_MARGIN_RIGHT
+
+
+def set_section_page_number_start(section, start: int | None):
+    sect_pr = section._sectPr
+    for child in list(sect_pr):
+        if child.tag == qn('w:pgNumType'):
+            sect_pr.remove(child)
+    if start is None:
+        return
+    pg_num_type = OxmlElement('w:pgNumType')
+    pg_num_type.set(qn('w:start'), str(start))
+    sect_pr.append(pg_num_type)
+
+
+def configure_section_footer(section, show_page_number: bool, page_number_start: int | None = None):
+    section.different_first_page_header_footer = False
+    set_section_page_number_start(section, page_number_start)
+
+    for footer in (section.footer, section.first_page_footer, section.even_page_footer):
+        footer.is_linked_to_previous = False
+        clear_header_footer_content(footer)
+
+    if not show_page_number:
+        return
+
+    paragraph = section.footer.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    paragraph.paragraph_format.space_before = Pt(0)
+    paragraph.paragraph_format.space_after = Pt(0)
+    apply_line_spacing(paragraph, PAGE_SPEC.line_spacing)
+    add_page_number(paragraph)
+
+
+def start_body_section(doc: Document):
+    section = doc.add_section()
+    apply_section_page_setup(section)
+    configure_section_footer(section, show_page_number=True, page_number_start=1)
+    return section
+
+
 def get_heading_style_name(level: int) -> str:
     return f'Heading {level}'
 
 
 def get_heading_style_id(level: int) -> str:
-    return {
-        1: '11',
-        2: '22',
-        3: '31',
-        4: '41',
-        5: '51',
-        6: '6',
-    }.get(level, '6')
+    return get_heading_style_name(level)
 
 
 def get_or_create_paragraph_style(doc: Document, style_name: str, style_id: str, spec: StyleSpec):
-    if style_id in doc.styles:
-        style = doc.styles[style_id]
-    elif style_name in doc.styles:
+    if style_name in doc.styles:
         style = doc.styles[style_name]
+    elif style_id in doc.styles:
+        style = doc.styles[style_id]
     else:
         raise KeyError(f'Style not found: {style_name} / {style_id}')
 
@@ -268,25 +365,34 @@ def set_cell_margins(cell, top=TABLE_CELL_MARGIN_TOP, start=TABLE_CELL_MARGIN_LE
         node.set(qn('w:type'), 'dxa')
 
 
-def add_page_number(paragraph):
+def add_field(paragraph, instruction: str, display_text: str | None = None, spec: StyleSpec = PAGE_SPEC):
     run = paragraph.add_run()
     fld_begin = OxmlElement('w:fldChar')
     fld_begin.set(qn('w:fldCharType'), 'begin')
     instr = OxmlElement('w:instrText')
     instr.set(qn('xml:space'), 'preserve')
-    instr.text = ' PAGE '
+    instr.text = instruction
     fld_sep = OxmlElement('w:fldChar')
     fld_sep.set(qn('w:fldCharType'), 'separate')
-    fld_text = OxmlElement('w:t')
-    fld_text.text = '1'
     fld_end = OxmlElement('w:fldChar')
     fld_end.set(qn('w:fldCharType'), 'end')
     run._r.append(fld_begin)
     run._r.append(instr)
     run._r.append(fld_sep)
-    run._r.append(fld_text)
+    if display_text is not None:
+        fld_text = OxmlElement('w:t')
+        fld_text.text = display_text
+        run._r.append(fld_text)
     run._r.append(fld_end)
-    set_run_font(run, PAGE_SPEC.font_name, PAGE_SPEC.font_size)
+    set_run_font(run, spec.font_name, spec.font_size)
+
+
+def add_page_number(paragraph):
+    add_field(paragraph, ' PAGE ', '1', PAGE_SPEC)
+
+
+def add_toc_field(paragraph, levels: str = '1-6'):
+    add_field(paragraph, f' TOC \\o "{levels}" \\h \\z \\u ', '右键更新目录', TOC_ENTRY_SPEC)
 
 
 def ensure_numbering_child_order(numbering, child, kind: str):
@@ -310,13 +416,11 @@ def ensure_numbering_child_order(numbering, child, kind: str):
     raise ValueError(f'Unsupported numbering child kind: {kind}')
 
 
-def ensure_numbering(doc: Document):
-    numbering = doc.part.numbering_part.numbering_definitions._numbering
-
-    title_existing = numbering.xpath(f'./w:abstractNum[@w:abstractNumId="{TITLE_NUMBERING_ABSTRACT_ID}"]')
+def ensure_title_numbering(numbering, abstract_id: str, numbering_id: str, top_level_mode: str):
+    title_existing = numbering.xpath(f'./w:abstractNum[@w:abstractNumId="{abstract_id}"]')
     if not title_existing:
         title_abstract = OxmlElement('w:abstractNum')
-        title_abstract.set(qn('w:abstractNumId'), TITLE_NUMBERING_ABSTRACT_ID)
+        title_abstract.set(qn('w:abstractNumId'), abstract_id)
 
         nsid = OxmlElement('w:nsid')
         nsid.set(qn('w:val'), '6C6F6E67')
@@ -335,7 +439,7 @@ def ensure_numbering(doc: Document):
             5: '6',
         }
         level_patterns = {
-            0: '%1',
+            0: '%1' if top_level_mode == NUMBERING_MODE_A else '%1、',
             1: '%1.%2',
             2: '%1.%2.%3',
             3: '%1.%2.%3.%4',
@@ -352,7 +456,7 @@ def ensure_numbering(doc: Document):
             lvl.append(start)
 
             num_fmt = OxmlElement('w:numFmt')
-            num_fmt.set(qn('w:val'), 'decimal')
+            num_fmt.set(qn('w:val'), 'chineseCountingThousand' if ilvl == 0 and top_level_mode == NUMBERING_MODE_B else 'decimal')
             lvl.append(num_fmt)
 
             p_style = OxmlElement('w:pStyle')
@@ -382,14 +486,20 @@ def ensure_numbering(doc: Document):
 
         ensure_numbering_child_order(numbering, title_abstract, 'abstract')
 
-    title_num_existing = numbering.xpath(f'./w:num[@w:numId="{TITLE_NUMBERING_ID}"]')
+    title_num_existing = numbering.xpath(f'./w:num[@w:numId="{numbering_id}"]')
     if not title_num_existing:
         title_num = OxmlElement('w:num')
-        title_num.set(qn('w:numId'), TITLE_NUMBERING_ID)
+        title_num.set(qn('w:numId'), numbering_id)
         title_ref = OxmlElement('w:abstractNumId')
-        title_ref.set(qn('w:val'), TITLE_NUMBERING_ABSTRACT_ID)
+        title_ref.set(qn('w:val'), abstract_id)
         title_num.append(title_ref)
         ensure_numbering_child_order(numbering, title_num, 'num')
+
+
+def ensure_numbering(doc: Document):
+    numbering = doc.part.numbering_part.numbering_definitions._numbering
+    ensure_title_numbering(numbering, TITLE_NUMBERING_ABSTRACT_ID, TITLE_NUMBERING_ID, NUMBERING_MODE_A)
+    ensure_title_numbering(numbering, TITLE_NUMBERING_MODE_B_ABSTRACT_ID, TITLE_NUMBERING_MODE_B_ID, NUMBERING_MODE_B)
 
     bullet_existing = numbering.xpath(f'./w:abstractNum[@w:abstractNumId="{BULLET_NUMBERING_ABSTRACT_ID}"]')
     if bullet_existing:
@@ -450,7 +560,11 @@ def ensure_numbering(doc: Document):
     ensure_numbering_child_order(numbering, bullet_num, 'num')
 
 
-def apply_heading_numbering(paragraph, level: int):
+def get_title_numbering_id(numbering_mode: str) -> str:
+    return TITLE_NUMBERING_MODE_B_ID if numbering_mode == NUMBERING_MODE_B else TITLE_NUMBERING_ID
+
+
+def apply_heading_numbering(paragraph, level: int, numbering_mode: str = NUMBERING_MODE_A):
     p_pr = paragraph._p.get_or_add_pPr()
     for child in list(p_pr):
         if child.tag == qn('w:numPr'):
@@ -460,7 +574,7 @@ def apply_heading_numbering(paragraph, level: int):
     ilvl = OxmlElement('w:ilvl')
     ilvl.set(qn('w:val'), str(max(level - 1, 0)))
     num_id = OxmlElement('w:numId')
-    num_id.set(qn('w:val'), TITLE_NUMBERING_ID)
+    num_id.set(qn('w:val'), get_title_numbering_id(numbering_mode))
     num_pr.append(ilvl)
     num_pr.append(num_id)
     insert_numpr_after_pstyle(p_pr, num_pr)
@@ -563,6 +677,61 @@ def render_cover(doc: Document, cover: dict[str, list[str] | str | None]):
         set_run_font(run, COVER_META_SPEC.font_name, COVER_META_SPEC.font_size)
         apply_paragraph_style(p, COVER_META_SPEC)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+
+def build_explicit_cover(cover_text: str | None) -> dict[str, list[str] | str | None]:
+    if cover_text is None:
+        return {'title': None, 'meta': []}
+
+    lines = [line.strip() for line in cover_text.splitlines() if line.strip()]
+    if not lines:
+        return {'title': None, 'meta': []}
+
+    return {'title': lines[0], 'meta': lines[1:]}
+
+
+def resolve_cover_decision(
+    analysis_cover: dict[str, list[str] | str | None],
+    reserve_cover: bool,
+    force_cover: bool | None,
+    cover_text: str | None,
+) -> tuple[dict[str, list[str] | str | None] | None, bool]:
+    if force_cover is True:
+        return build_explicit_cover(cover_text), True
+
+    if force_cover is False:
+        return None, False
+
+    if analysis_cover.get('title') or analysis_cover.get('meta'):
+        return analysis_cover, True
+
+    if reserve_cover:
+        return {'title': None, 'meta': []}, True
+
+    return None, False
+
+
+def render_cover_placeholder(doc: Document):
+    for _ in range(COVER_TOP_SPACER_COUNT):
+        spacer = doc.add_paragraph()
+        apply_paragraph_style(spacer, COVER_META_SPEC)
+        spacer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    placeholder = doc.add_paragraph()
+    apply_paragraph_style(placeholder, COVER_META_SPEC)
+    placeholder.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+
+def render_toc(doc: Document, toc_entries: list[tuple[int, str]]):
+    title = doc.add_paragraph()
+    title_run = title.add_run(TOC_TITLE)
+    set_run_font(title_run, TOC_TITLE_SPEC.font_name, TOC_TITLE_SPEC.font_size)
+    apply_paragraph_style(title, TOC_TITLE_SPEC)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    toc_paragraph = doc.add_paragraph()
+    apply_paragraph_style(toc_paragraph, TOC_ENTRY_SPEC)
+    add_toc_field(toc_paragraph)
+
     page_break = doc.add_paragraph()
     page_break.add_run().add_break(WD_BREAK.PAGE)
 
@@ -587,12 +756,7 @@ def configure_document(doc: Document):
     clear_document_body(doc)
 
     section = doc.sections[0]
-    section.page_width = A4_WIDTH
-    section.page_height = A4_HEIGHT
-    section.top_margin = PAGE_MARGIN_TOP
-    section.bottom_margin = PAGE_MARGIN_BOTTOM
-    section.left_margin = PAGE_MARGIN_LEFT
-    section.right_margin = PAGE_MARGIN_RIGHT
+    apply_section_page_setup(section)
 
     if 'Normal' in doc.styles:
         normal = doc.styles['Normal']
@@ -618,14 +782,7 @@ def configure_document(doc: Document):
         style = get_or_create_paragraph_style(doc, get_heading_style_name(level), get_heading_style_id(level), spec)
         ensure_style_numbering(style, level)
 
-    footer = section.footer
-    paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
-    paragraph.clear()
-    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    paragraph.paragraph_format.space_before = Pt(0)
-    paragraph.paragraph_format.space_after = Pt(0)
-    apply_line_spacing(paragraph, PAGE_SPEC.line_spacing)
-    add_page_number(paragraph)
+    configure_section_footer(section, show_page_number=False, page_number_start=None)
     ensure_numbering(doc)
 
 
@@ -692,11 +849,185 @@ def shade_cell(cell, fill: str):
     tc_pr.append(shd)
 
 
-def render_markdown(doc: Document, text: str):
+def normalize_toc_heading(text: str) -> str:
+    return re.sub(r'\s+', ' ', text.strip().lower())
+
+
+def is_explicit_toc_heading(text: str) -> bool:
+    return normalize_toc_heading(text) in TOC_HEADING_MARKERS
+
+
+def scan_markdown_toc(lines: list[str]) -> bool:
+    in_code = False
+    non_empty_seen = 0
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('```'):
+            in_code = not in_code
+            continue
+        if in_code or not stripped:
+            continue
+        non_empty_seen += 1
+        heading = HEADING_RE.match(line)
+        if heading and is_explicit_toc_heading(strip_heading_number_prefix(heading.group(2).strip())):
+            return True
+        if non_empty_seen >= 12:
+            break
+    return False
+
+
+def collect_markdown_toc_entries(lines: list[str]) -> list[tuple[int, str]]:
+    entries: list[tuple[int, str]] = []
+    heading_base_level = detect_heading_base_level(lines)
+    in_code = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('```'):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
+        heading = HEADING_RE.match(line)
+        if not heading:
+            continue
+        source_level = len(heading.group(1))
+        level = max(source_level - heading_base_level + 1, 1)
+        level = min(level, 6)
+        content = strip_heading_number_prefix(heading.group(2).strip())
+        if not content or is_explicit_toc_heading(content):
+            continue
+        entries.append((level, content))
+    return entries
+
+
+def detect_txt_heading(line: str) -> tuple[int, str] | None:
+    stripped = line.strip()
+    if not stripped or len(stripped) > TXT_HEADING_MAX_LENGTH:
+        return None
+    if stripped.endswith(('。', '；', '，', '.', ';', ',')):
+        return None
+
+    numbered = TXT_NUMBERED_HEADING_RE.match(line)
+    if numbered:
+        numbering = numbered.group(1)
+        title = numbered.group(2).strip()
+        if not title:
+            return None
+        level = min(numbering.count('.') + 1, 6)
+        return level, title
+
+    chinese = TXT_CHINESE_HEADING_RE.match(line)
+    if chinese:
+        title = chinese.group(2).strip()
+        if not title:
+            return None
+        return 1, title
+
+    return None
+
+
+def scan_txt_toc(lines: list[str]) -> bool:
+    non_empty_seen = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        non_empty_seen += 1
+        if is_explicit_toc_heading(stripped):
+            return True
+        detected = detect_txt_heading(stripped)
+        if detected and is_explicit_toc_heading(detected[1]):
+            return True
+        if non_empty_seen >= 12:
+            break
+    return False
+
+
+def build_txt_blocks(lines: list[str]) -> list[TxtBlock]:
+    blocks: list[TxtBlock] = []
+    paragraphs: list[str] = []
+
+    def flush_paragraphs():
+        nonlocal paragraphs
+        if paragraphs:
+            blocks.append(TxtBlock('paragraph', paragraphs))
+            paragraphs = []
+
+    for line in lines:
+        stripped = line.strip()
+        detected = detect_txt_heading(line)
+        if detected:
+            flush_paragraphs()
+            level, title = detected
+            blocks.append(TxtBlock('heading', [line], level, title))
+            continue
+        if not stripped:
+            flush_paragraphs()
+            continue
+        paragraphs.append(line)
+
+    flush_paragraphs()
+    return blocks
+
+
+def collect_txt_toc_entries(blocks: list[TxtBlock]) -> list[tuple[int, str]]:
+    entries: list[tuple[int, str]] = []
+    for block in blocks:
+        if block.kind != 'heading' or block.level is None or not block.title:
+            continue
+        if is_explicit_toc_heading(block.title):
+            continue
+        entries.append((block.level, block.title))
+    return entries
+
+
+def check_runtime_dependencies(input_path: Path):
+    if DOCX_IMPORT_ERROR is not None:
+        raise SystemExit(
+            'Missing dependency: python-docx. Install it with "python3 -m pip install python-docx" before using this skill.'
+        ) from DOCX_IMPORT_ERROR
+
+    if input_path.suffix.lower() not in SUPPORTED_INPUT_SUFFIXES:
+        supported = ', '.join(sorted(SUPPORTED_INPUT_SUFFIXES))
+        raise SystemExit(f'Unsupported input type: {input_path.suffix.lower()}. Supported types: {supported}')
+
+
+def analyze_markdown(text: str) -> AnalysisResult:
     raw_lines = text.splitlines()
-    cover, lines = extract_cover_region(raw_lines)
-    if cover.get('title') or cover.get('meta'):
-        render_cover(doc, cover)
+    cover, body_lines = extract_cover_region(raw_lines)
+    return AnalysisResult(cover, body_lines, scan_markdown_toc(body_lines), collect_markdown_toc_entries(body_lines))
+
+
+def analyze_txt(text: str) -> tuple[AnalysisResult, list[TxtBlock]]:
+    raw_lines = text.splitlines()
+    cover, body_lines = extract_cover_region(raw_lines)
+    blocks = build_txt_blocks(body_lines)
+    return AnalysisResult(cover, body_lines, scan_txt_toc(body_lines), collect_txt_toc_entries(blocks)), blocks
+
+
+def render_markdown(
+    doc: Document,
+    analysis: AnalysisResult,
+    reserve_cover: bool,
+    auto_toc: bool,
+    numbering_mode: str = NUMBERING_MODE_A,
+    force_cover: bool | None = None,
+    cover_text: str | None = None,
+    force_toc: bool | None = None,
+):
+    cover, has_cover_section = resolve_cover_decision(analysis.cover, reserve_cover, force_cover, cover_text)
+    lines = analysis.body_lines
+    if has_cover_section:
+        if cover and (cover.get('title') or cover.get('meta')):
+            render_cover(doc, cover)
+        else:
+            render_cover_placeholder(doc)
+        start_body_section(doc)
+
+    should_render_toc = force_toc if force_toc is not None else auto_toc
+    if should_render_toc and not analysis.toc_exists and analysis.toc_entries:
+        render_toc(doc, analysis.toc_entries)
+
     heading_base_level = detect_heading_base_level(lines)
     in_code = False
     code_lines: list[str] = []
@@ -779,7 +1110,7 @@ def render_markdown(doc: Document, text: str):
             spec = get_heading_spec(level)
             set_run_font(run, spec.font_name, spec.font_size)
             apply_paragraph_style(p, spec)
-            apply_heading_numbering(p, level)
+            apply_heading_numbering(p, level, numbering_mode)
             i += 1
             continue
 
@@ -819,37 +1150,91 @@ def render_markdown(doc: Document, text: str):
         apply_code_block_style(p)
 
 
-def render_txt(doc: Document, text: str):
-    raw_lines = text.splitlines()
-    cover, body_lines = extract_cover_region(raw_lines)
-    if cover.get('title') or cover.get('meta'):
-        render_cover(doc, cover)
-    body_text = '\n'.join(body_lines)
-    blocks = re.split(r'\n\s*\n+', body_text.strip()) if body_text.strip() else []
+def render_txt(
+    doc: Document,
+    analysis: AnalysisResult,
+    blocks: list[TxtBlock],
+    reserve_cover: bool,
+    auto_toc: bool,
+    numbering_mode: str = NUMBERING_MODE_A,
+    force_cover: bool | None = None,
+    cover_text: str | None = None,
+    force_toc: bool | None = None,
+):
+    cover, has_cover_section = resolve_cover_decision(analysis.cover, reserve_cover, force_cover, cover_text)
+    if has_cover_section:
+        if cover and (cover.get('title') or cover.get('meta')):
+            render_cover(doc, cover)
+        else:
+            render_cover_placeholder(doc)
+        start_body_section(doc)
+
+    should_render_toc = force_toc if force_toc is not None else auto_toc
+    if should_render_toc and not analysis.toc_exists and analysis.toc_entries:
+        render_toc(doc, analysis.toc_entries)
+
     for block in blocks:
+        if block.kind == 'heading' and block.level is not None and block.title is not None:
+            p = doc.add_paragraph(style=get_heading_style_id(block.level))
+            run = p.add_run(block.title)
+            spec = get_heading_spec(block.level)
+            set_run_font(run, spec.font_name, spec.font_size)
+            apply_paragraph_style(p, spec)
+            apply_heading_numbering(p, block.level, numbering_mode)
+            continue
+
         p = doc.add_paragraph()
-        lines = block.splitlines()
-        for idx, line in enumerate(lines):
+        for idx, line in enumerate(block.lines):
             run = p.add_run(line)
             set_run_font(run, BODY_SPEC.font_name, BODY_SPEC.font_size)
-            if idx != len(lines) - 1:
+            if idx != len(block.lines) - 1:
                 run.add_break()
         apply_paragraph_style(p, BODY_SPEC)
 
 
-def convert(input_path: Path, output_path: Path):
+def convert(
+    input_path: Path,
+    output_path: Path,
+    reserve_cover: bool = False,
+    auto_toc: bool = False,
+    numbering_mode: str = NUMBERING_MODE_A,
+    force_cover: bool | None = None,
+    cover_text: str | None = None,
+    force_toc: bool | None = None,
+):
     suffix = input_path.suffix.lower()
-    if suffix not in {'.md', '.markdown', '.txt'}:
+    if suffix not in SUPPORTED_INPUT_SUFFIXES:
         raise ValueError(f'Unsupported input type: {suffix}')
 
     text = input_path.read_text(encoding='utf-8')
-    doc = Document(TEMPLATE_DOCX_PATH)
+    doc = Document()
     configure_document(doc)
 
     if suffix in {'.md', '.markdown'}:
-        render_markdown(doc, text)
+        analysis = analyze_markdown(text)
+        render_markdown(
+            doc,
+            analysis,
+            reserve_cover,
+            auto_toc,
+            numbering_mode,
+            force_cover=force_cover,
+            cover_text=cover_text,
+            force_toc=force_toc,
+        )
     else:
-        render_txt(doc, text)
+        analysis, blocks = analyze_txt(text)
+        render_txt(
+            doc,
+            analysis,
+            blocks,
+            reserve_cover,
+            auto_toc,
+            numbering_mode,
+            force_cover=force_cover,
+            cover_text=cover_text,
+            force_toc=force_toc,
+        )
 
     doc.save(output_path)
 
@@ -858,6 +1243,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Convert Markdown or TXT to formatted DOCX.')
     parser.add_argument('input', help='Input .md, .markdown, or .txt file')
     parser.add_argument('output', nargs='?', help='Optional output .docx path')
+    parser.add_argument('--reserve-cover', action='store_true', help='Insert a placeholder cover page when no cover is detected')
+    parser.add_argument('--auto-toc', action='store_true', help='Insert a generated TOC page when no explicit TOC heading is detected')
+    parser.add_argument('--with-cover', dest='force_cover', action='store_const', const=True, default=None, help='Always generate a cover page and bypass automatic cover detection')
+    parser.add_argument('--without-cover', dest='force_cover', action='store_const', const=False, help='Never generate a cover page and bypass automatic cover detection')
+    parser.add_argument('--cover-text', help='Explicit cover text. The first non-empty line is used as the title and later lines are rendered as centered metadata')
+    parser.add_argument('--with-toc', dest='force_toc', action='store_const', const=True, default=None, help='Always request generated TOC insertion when no explicit TOC heading exists')
+    parser.add_argument('--without-toc', dest='force_toc', action='store_const', const=False, help='Never insert a generated TOC page')
+    parser.add_argument('--numbering-mode', choices=[NUMBERING_MODE_A, NUMBERING_MODE_B], default=NUMBERING_MODE_A, help='Heading numbering mode: A for all-numeric, B for Chinese top-level headings')
     return parser.parse_args()
 
 
@@ -867,12 +1260,31 @@ def main():
     if not input_path.exists():
         raise SystemExit(f'Input file not found: {input_path}')
 
+    check_runtime_dependencies(input_path)
+
     if args.output:
         output_path = Path(args.output).expanduser().resolve()
     else:
         output_path = input_path.with_suffix('.docx')
 
-    convert(input_path, output_path)
+    if args.cover_text is not None and args.force_cover is False:
+        raise SystemExit('--cover-text cannot be used together with --without-cover')
+
+    if args.cover_text is not None and args.force_cover is None:
+        force_cover = True
+    else:
+        force_cover = args.force_cover
+
+    convert(
+        input_path,
+        output_path,
+        reserve_cover=args.reserve_cover,
+        auto_toc=args.auto_toc,
+        numbering_mode=args.numbering_mode,
+        force_cover=force_cover,
+        cover_text=args.cover_text,
+        force_toc=args.force_toc,
+    )
     print(output_path)
 
 

@@ -24,6 +24,8 @@ This skill is not primarily about producing a `.docx` file by itself. Its main j
 
 If the user explicitly needs a finished `.docx`, use this skill to determine the formatting structure first, then hand off to a Word/document-generation workflow.
 
+In this repository, the local script workflow now directly supports both Mode A and Mode B heading numbering, can insert a real Word TOC field when `--auto-toc` is enabled, and uses a more formal pagination model when a cover page exists.
+
 ## Required workflow
 
 Follow this sequence.
@@ -126,10 +128,22 @@ Map every block to the exact style below. Do not improvise font sizes, spacing, 
 
 When the user wants an actual `.docx` file in this repository and the source input is `.md`, `.markdown`, or `.txt`, prefer the built-in local script workflow instead of only returning structured formatting guidance.
 
+Before launching the local DOCX workflow through this skill, ask these questions in order:
+1. whether to generate a cover page
+2. if a cover page should be generated, what cover text to use (manual input; default empty)
+3. whether to generate a TOC page
+
+Apply the user's answers directly:
+- if the user chooses to generate a cover page, treat that as an explicit cover decision and do not rely on automatic cover detection
+- if the user provides cover text, pass it through to the script and render the first non-empty line as the cover title, with later non-empty lines rendered as centered metadata
+- if the user chooses to generate a cover page but leaves the text empty, generate a blank placeholder cover page
+- if the user chooses not to generate a cover page, suppress both automatic cover detection and placeholder-cover insertion for that run
+- ask about TOC generation every time, then map the answer to the script invocation for that run
+
 Use:
 
 ```bash
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx]
+python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc] [--numbering-mode A|B]
 ```
 
 Apply this path when:
@@ -137,7 +151,46 @@ Apply this path when:
 - the input is Markdown or TXT
 - the content mainly consists of headings, paragraphs, tables, and fenced code blocks
 
+### Before use
+
+Before running the local DOCX workflow, check:
+- Python 3 is available
+- `python-docx` is installed
+
+The script now performs these checks at startup and exits with a clear error if a required dependency is missing.
+
 This local script is the default implementation for this repository because it already applies the core formatting rules from this skill, including heading mapping, body formatting, table formatting, page setup, page numbers, first-line indent in Word character units, and basic cover recognition.
+It now creates the output document from a blank Word document and does not depend on a local template `.docx` file.
+
+Additional options:
+- `--reserve-cover`: when no explicit cover decision is provided and no cover is detected, insert a placeholder cover page
+- `--auto-toc`: when no explicit TOC decision is provided and no explicit TOC heading is detected, insert a generated Word TOC field page
+- `--with-cover`: always generate a cover page for this run and bypass automatic cover detection
+- `--without-cover`: never generate a cover page for this run and bypass automatic cover detection
+- `--cover-text <text>`: explicit cover text; the first non-empty line becomes the title and later non-empty lines become centered metadata; implies `--with-cover` when used alone
+- `--with-toc`: explicitly request generated TOC insertion for this run
+- `--without-toc`: explicitly suppress generated TOC insertion for this run
+- `--numbering-mode A|B`: choose Mode A (all-decimal hierarchy) or Mode B (Chinese top-level headings with decimal lower levels)
+
+Compatibility behavior:
+- the new explicit cover / TOC options are the preferred path for skill-driven runs
+- `--reserve-cover` and `--auto-toc` remain supported for direct CLI use
+- when an explicit cover or TOC decision is provided, it overrides the older fallback switches
+
+Pagination behavior:
+- when a cover page exists, the cover section has no page number
+- after the cover, the script starts a new body section and restarts page numbering from 1
+- when no cover exists, the document keeps a single section and uses the normal page-number footer directly
+
+TOC detection rules:
+- only explicit TOC headings count as an existing TOC
+- accepted markers: `目录`, `TOC`, `Table of Contents`
+- when an explicit TOC heading is already present, generated TOC insertion must not insert another TOC page
+- the inserted TOC is a real Word field, so users can update it inside Word after opening the document
+
+TXT support note:
+- the script now includes a minimal TXT heading detector so TXT inputs can also participate in TOC generation
+- numeric headings such as `1`, `1.1`, `1.1.1` and Chinese top-level headings such as `一、` are recognized conservatively
 
 ### Cover recognition rules
 
@@ -149,11 +202,11 @@ Preferred explicit labels:
 - `日期:` / `日期：`
 - bracketed forms such as `[封面标题]` and `[封面公司/日期]`
 
-If explicit labels are absent, the script only inspects the first few non-empty lines of the document:
+If explicit cover decisions are absent, the script only inspects the first few non-empty lines of the document:
 - the first short standalone line is treated as the cover title
 - the next 1-2 short lines are treated as company name / date
 - detection stops immediately when it encounters a Markdown heading, table, fenced code block, or an obvious long body line
-- when a cover block is recognized, the script inserts an automatic page break before the body content
+- when a cover block is recognized, the script creates a separate body section after the cover so the cover remains unnumbered
 - the script also adds fixed top spacing so the cover content sits in the upper-middle area of the page
 
 Use structured Markdown / JSON output instead only when the user wants the formatting model or wants to feed another generation pipeline.
