@@ -2,7 +2,7 @@
 
 This repository documents the skills under `skills/`.
 
-At the moment, the primary skill is `skills/word-expert-formatting`, a custom Claude Code skill for formatting Chinese Word content and supporting local `.docx` generation from Markdown or plain text.
+At the moment, the primary skill is `skills/word-expert-formatting`, a custom Claude Code skill for formatting Chinese Word content and supporting local `.docx` generation from Markdown or plain text, plus in-place refresh and verification for existing `.docx` files.
 
 It now supports both Mode A and Mode B heading numbering, and `--auto-toc` inserts a Word TOC field instead of static TOC text.
 
@@ -19,6 +19,7 @@ Purpose:
 - apply a strict Chinese formal-document style model
 - support both Mode A and Mode B heading numbering
 - support local `.docx` generation when the input is `.md`, `.markdown`, or `.txt`
+- support in-place normalization and verification when the input is an existing `.docx`
 
 Reference: `skills/word-expert-formatting/SKILL.md:1`
 
@@ -31,7 +32,9 @@ Reference: `skills/word-expert-formatting/SKILL.md:1`
 - cover detection rules
 - style mapping for headings, body text, tables, and footer page numbers
 - output contracts for structured formatting results
-- when to use the local DOCX generation script
+- body paragraphs are normalized by clearing inherited indent, line spacing, and alignment before applying justified alignment and a 2-character first-line indent
+- existing `.docx` refresh preserves images, tables, page breaks, and section structure instead of deleting and rebuilding the body
+- existing `.docx` verification checks both paragraph layout and structure preservation
 
 Reference: `skills/word-expert-formatting/SKILL.md:27`
 
@@ -42,12 +45,14 @@ The local implementation lives in:
 `skills/word-expert-formatting/scripts/text_to_docx.py`
 
 The script currently:
-- accepts `.md`, `.markdown`, and `.txt`
+- accepts `.md`, `.markdown`, `.txt`, and `.docx`
 - formats headings, paragraphs, lists, tables, code blocks, footer page numbers, and simple cover sections
 - supports both Mode A and Mode B heading numbering through `--numbering-mode`
 - can reserve a placeholder cover page when no cover is detected
 - can generate a Word TOC field page when no explicit TOC heading is detected
 - can take explicit cover / TOC decisions for a run, including manual cover text input
+- refreshes existing `.docx` files in place instead of deleting and rebuilding the body
+- preserves images, tables, page breaks, and section structure during existing `.docx` refresh
 - uses a more formal pagination model when a cover page exists: the cover has no page number and the body section restarts numbering from 1
 - writes a `.docx` file
 
@@ -94,7 +99,7 @@ Reference: `skills/word-expert-formatting/scripts/text_to_docx.py:8`
 
 ## Supported features
 
-The current script handles:
+Current script support includes:
 - Markdown headings (`#` to `######`)
 - paragraphs
 - unordered lists
@@ -102,6 +107,8 @@ The current script handles:
 - Markdown tables
 - fenced code blocks
 - simple cover recognition
+- multi-line cover title blocks for existing `.docx` cover refresh
+- for existing `.docx` cover titles, refresh only corrects font and size; it does not change existing title alignment
 - placeholder cover insertion with `--reserve-cover`
 - explicit cover generation with `--with-cover` and `--cover-text`
 - explicit cover suppression with `--without-cover`
@@ -111,6 +118,8 @@ The current script handles:
 - explicit TOC suppression with `--without-toc`
 - Mode A / Mode B heading numbering with `--numbering-mode`
 - formal pagination when a cover exists: no page number on the cover, body numbering restarts from 1
+- existing `.docx` in-place refresh with structure preservation
+- existing `.docx` verification for cover, TOC, body layout, tables, numbering, and structure counts
 - TXT paragraph blocks
 - minimal TXT heading detection for TOC generation
 
