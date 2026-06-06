@@ -23,11 +23,25 @@ except ImportError as exc:
     WD_SECTION_START = None
     WD_ALIGN_VERTICAL = None
     WD_ROW_HEIGHT_RULE = None
-    WD_ALIGN_PARAGRAPH = None
-    WD_BREAK = None
-    WD_LINE_SPACING = None
     DocxTable = None
     DocxParagraph = None
+
+    class _DummyAlign:
+        LEFT = 0
+        CENTER = 1
+        RIGHT = 2
+        JUSTIFY = 3
+
+    class _DummyBreak:
+        PAGE = 7
+
+    class _DummyLineSpacing:
+        SINGLE = 0
+        ONE_POINT_FIVE = 1
+
+    WD_ALIGN_PARAGRAPH = _DummyAlign
+    WD_BREAK = _DummyBreak
+    WD_LINE_SPACING = _DummyLineSpacing
 
     def OxmlElement(*args, **kwargs):
         raise RuntimeError('python-docx is required to build DOCX output')
@@ -223,6 +237,15 @@ def configure_section_footer(section, show_page_number: bool, page_number_start:
     paragraph.paragraph_format.space_after = Pt(0)
     apply_line_spacing(paragraph, PAGE_SPEC.line_spacing)
     add_page_number(paragraph)
+
+
+def ensure_section_type_next_page(sect_pr) -> None:
+    for child in list(sect_pr):
+        if child.tag == qn('w:type'):
+            sect_pr.remove(child)
+    type_node = OxmlElement('w:type')
+    type_node.set(qn('w:val'), 'nextPage')
+    sect_pr.append(type_node)
 
 
 def start_body_section(doc: Document):
@@ -1118,24 +1141,45 @@ def ensure_body_section_for_existing_docx(doc: Document) -> None:
     boundary = find_body_start_boundary(doc)
     if boundary is None:
         return
-    if any(child.tag == qn('w:sectPr') for child in list(boundary)):
+
+    body = doc._element.body
+    body_children = [child for child in body.iterchildren() if child.tag != qn('w:sectPr')]
+    try:
+        boundary_index = body_children.index(boundary)
+    except ValueError:
         return
-    if boundary.tag != qn('w:p'):
-        paragraph = doc.paragraphs[0] if doc.paragraphs else doc.add_paragraph()
-        if paragraph.runs:
-            paragraph.runs[-1].add_break(WD_BREAK.PAGE)
-        else:
-            paragraph.add_run().add_break(WD_BREAK.PAGE)
+    if boundary_index == 0:
         return
-    sect_pr = OxmlElement('w:sectPr')
-    type_node = OxmlElement('w:type')
-    type_node.set(qn('w:val'), 'nextPage')
-    sect_pr.append(type_node)
-    p_pr = boundary.get_or_add_pPr()
-    for child in list(p_pr):
-        if child.tag == qn('w:sectPr'):
-            p_pr.remove(child)
+
+    previous = body_children[boundary_index - 1]
+    if previous.tag == qn('w:p'):
+        previous_p_pr = previous.get_or_add_pPr()
+        for child in list(previous_p_pr):
+            if child.tag == qn('w:sectPr'):
+                return
+
+    boundary_sect_pr = None
+    if boundary.tag == qn('w:p'):
+        boundary_p_pr = boundary.pPr
+        if boundary_p_pr is not None:
+            for child in list(boundary_p_pr):
+                if child.tag == qn('w:sectPr'):
+                    boundary_sect_pr = child
+                    boundary_p_pr.remove(child)
+                    break
+
+    sect_pr = boundary_sect_pr if boundary_sect_pr is not None else OxmlElement('w:sectPr')
+    ensure_section_type_next_page(sect_pr)
+
+    if previous.tag == qn('w:p'):
+        previous.get_or_add_pPr().append(sect_pr)
+        return
+
+    section_break_paragraph = OxmlElement('w:p')
+    p_pr = OxmlElement('w:pPr')
     p_pr.append(sect_pr)
+    section_break_paragraph.append(p_pr)
+    body.insert(list(body).index(boundary), section_break_paragraph)
 
 
 def normalize_existing_heading_paragraph(paragraph, numbering_mode: str) -> None:
@@ -1236,10 +1280,11 @@ def refresh_existing_docx(
     else:
         configure_section_footer(doc.sections[0], show_page_number=True, page_number_start=1)
 
+    toc_heading, toc_field = find_toc_region(doc)
     context = build_verification_context(
         expected_cover=inferred_cover,
         expect_cover=has_cover_section,
-        expect_toc=bool(find_toc_region(doc)[1]),
+        expect_toc=bool(toc_heading or toc_field),
         expected_headings=expected_headings,
         numbering_mode=numbering_mode,
         source_kind='refreshed',
