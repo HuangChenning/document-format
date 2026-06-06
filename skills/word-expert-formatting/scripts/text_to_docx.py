@@ -9,7 +9,6 @@ DOCX_IMPORT_ERROR = None
 
 try:
     from docx import Document
-    from docx.enum.section import WD_SECTION_START
     from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
     from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_LINE_SPACING
     from docx.oxml import OxmlElement
@@ -20,7 +19,6 @@ try:
 except ImportError as exc:
     DOCX_IMPORT_ERROR = exc
     Document = None
-    WD_SECTION_START = None
     WD_ALIGN_VERTICAL = None
     WD_ROW_HEIGHT_RULE = None
     DocxTable = None
@@ -571,7 +569,7 @@ def ensure_title_numbering(numbering, abstract_id: str, numbering_id: str, top_l
         title_abstract.append(multi_level_type)
 
         level_styles = {
-            ilvl: str(min(ilvl + 1, 9)) for ilvl in range(MAX_HEADING_LEVEL)
+            ilvl: get_heading_style_id(ilvl + 1) for ilvl in range(MAX_HEADING_LEVEL)
         }
         level_patterns = {
             ilvl: ('%1、' if ilvl == 0 and top_level_mode == NUMBERING_MODE_B else '.'.join(f'%{idx}' for idx in range(1, ilvl + 2)))
