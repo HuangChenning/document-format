@@ -2,7 +2,7 @@
 
 这个仓库的 README 只描述 `skills/` 目录下的技能。
 
-当前主要技能是 `skills/word-expert-formatting`，它是一个自定义 Claude Code skill，用于格式化中文 Word 内容，并支持把 Markdown 或纯文本本地生成 `.docx`。
+当前主要技能是 `skills/word-expert-formatting`，它是一个自定义 Claude Code skill，用于格式化中文 Word 内容，并支持把 Markdown 或纯文本本地生成 `.docx`，以及对已有 `.docx` 做原位刷新与核查。
 
 它现在已经同时支持 Mode A 与 Mode B 标题编号，并且 `--auto-toc` 会插入 Word 动态目录域，而不是静态目录文本。
 
@@ -19,6 +19,7 @@
 - 套用严格的中文正式文档排版模型
 - 同时支持 Mode A 与 Mode B 标题编号
 - 当输入为 `.md`、`.markdown` 或 `.txt` 时，支持本地生成 `.docx`
+- 当输入为已有 `.docx` 时，支持原位规范化与核查
 
 参考：`skills/word-expert-formatting/SKILL.md:1`
 
@@ -31,7 +32,9 @@
 - 封面识别规则
 - 标题、正文、表格和页脚页码的样式映射
 - 结构化格式化结果的输出契约
-- 何时使用本地 DOCX 生成脚本
+- 正文段落会先清空原有缩进、行距和对齐，再按标准样式应用两端对齐与首行缩进 2 字符
+- 已有 `.docx` 刷新会保留图片、表格、分页和 section 结构，而不是删除正文后重建
+- 已有 `.docx` 核查同时覆盖段落版式与结构保真
 
 参考：`skills/word-expert-formatting/SKILL.md:27`
 
@@ -42,12 +45,14 @@
 `skills/word-expert-formatting/scripts/text_to_docx.py`
 
 脚本当前会：
-- 接收 `.md`、`.markdown` 和 `.txt`
+- 接收 `.md`、`.markdown`、`.txt` 和 `.docx`
 - 处理标题、段落、列表、表格、代码块、页脚页码和简单封面
 - 通过 `--numbering-mode` 支持 Mode A 与 Mode B 标题编号
 - 在未检测到封面时，可通过 `--reserve-cover` 预留封面页
 - 在未检测到显式目录标题时，可通过 `--auto-toc` 插入 Word 动态目录页
 - 支持按单次运行显式指定首页 / 目录决策，并支持手动输入首页文字
+- 对已有 `.docx` 采用原位刷新，而不是删除正文后重建
+- 在已有 `.docx` 刷新时保留图片、表格、分页和 section 结构
 - 当存在封面页时，使用更正式的分页模型：封面无页码，正文节从 1 开始重新编号
 - 输出 `.docx` 文件
 
@@ -102,6 +107,8 @@ skill 现在会把这些回答当作本次运行的显式决策：
 - Markdown 表格
 - 围栏代码块
 - 简单封面识别
+- 面向已有 `.docx` 刷新的多行封面标题块识别
+- 对已有 `.docx` 的封面标题，刷新时只修正字体和字号，不改变原有标题对齐方式
 - 通过 `--reserve-cover` 预留封面页
 - 通过 `--with-cover` 与 `--cover-text` 显式生成首页
 - 通过 `--without-cover` 显式禁止生成首页
@@ -111,6 +118,8 @@ skill 现在会把这些回答当作本次运行的显式决策：
 - 通过 `--without-toc` 显式禁止生成目录
 - 通过 `--numbering-mode` 支持 Mode A / Mode B 标题编号
 - 当存在封面页时采用正式分页：封面无页码，正文从 1 开始重新编号
+- 保留结构的已有 `.docx` 原位刷新
+- 面向已有 `.docx` 的封面、目录、正文、表格、编号与结构计数核查
 - TXT 段落块
 - 为目录生成提供最小 TXT 标题识别
 
