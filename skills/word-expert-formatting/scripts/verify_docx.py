@@ -4,9 +4,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from docx import Document
-
 from text_to_docx import (
+    Document,
     build_verification_context,
     check_runtime_dependencies,
     find_toc_region,
@@ -27,11 +26,11 @@ def verify_existing_docx(
     doc = Document(str(input_path))
     expected_headings = infer_expected_headings(doc)
     inferred_cover = infer_cover(doc)
-    _, toc_field = find_toc_region(doc)
+    toc_heading, toc_field = find_toc_region(doc)
     context = build_verification_context(
         expected_cover=inferred_cover,
         expect_cover=bool(inferred_cover) if expect_cover is None else expect_cover,
-        expect_toc=bool(toc_field) if expect_toc is None else expect_toc,
+        expect_toc=bool(toc_heading or toc_field) if expect_toc is None else expect_toc,
         expected_headings=expected_headings,
         numbering_mode=numbering_mode,
         source_kind='refreshed',

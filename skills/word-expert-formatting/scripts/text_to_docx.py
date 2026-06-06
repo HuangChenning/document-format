@@ -240,12 +240,8 @@ def configure_section_footer(section, show_page_number: bool, page_number_start:
 
 
 def ensure_section_type_next_page(sect_pr) -> None:
-    for child in list(sect_pr):
-        if child.tag == qn('w:type'):
-            sect_pr.remove(child)
-    type_node = OxmlElement('w:type')
+    type_node = sect_pr.get_or_add_type()
     type_node.set(qn('w:val'), 'nextPage')
-    sect_pr.append(type_node)
 
 
 def start_body_section(doc: Document):
@@ -362,25 +358,23 @@ def clear_paragraph_formatting(paragraph):
 def set_first_line_indent_chars(paragraph, chars: int):
     clear_paragraph_indentation(paragraph)
     p_pr = paragraph._p.get_or_add_pPr()
-    ind = OxmlElement('w:ind')
+    ind = p_pr.get_or_add_ind()
     ind.set(qn('w:left'), '0')
     ind.set(qn('w:leftChars'), '0')
     ind.set(qn('w:right'), '0')
     ind.set(qn('w:firstLine'), '0')
     ind.set(qn('w:firstLineChars'), str(chars * 100))
-    p_pr.append(ind)
 
 
 def set_no_first_line_indent(paragraph):
     clear_paragraph_indentation(paragraph)
     p_pr = paragraph._p.get_or_add_pPr()
-    ind = OxmlElement('w:ind')
+    ind = p_pr.get_or_add_ind()
     ind.set(qn('w:left'), '0')
     ind.set(qn('w:leftChars'), '0')
     ind.set(qn('w:right'), '0')
     ind.set(qn('w:firstLine'), '0')
     ind.set(qn('w:firstLineChars'), '0')
-    p_pr.append(ind)
 
 
 def set_paragraph_shading(paragraph, fill: str):
@@ -416,13 +410,12 @@ def apply_style_paragraph_format(style, spec: StyleSpec):
     for child in list(p_pr):
         if child.tag == qn('w:ind'):
             p_pr.remove(child)
-    ind = OxmlElement('w:ind')
+    ind = p_pr.get_or_add_ind()
     ind.set(qn('w:left'), '0')
     ind.set(qn('w:leftChars'), '0')
     ind.set(qn('w:right'), '0')
     ind.set(qn('w:firstLine'), '0')
     ind.set(qn('w:firstLineChars'), '0')
-    p_pr.append(ind)
     if spec.line_spacing == 'single':
         fmt.line_spacing = 1.0
         fmt.line_spacing_rule = WD_LINE_SPACING.SINGLE
@@ -819,7 +812,10 @@ def get_abstract_level_node(abstract_node, ilvl: int):
 
 
 def get_numbering_level_node(doc: Document, num_id: str, ilvl: int):
-    numbering = doc.part.numbering_part.numbering_definitions._numbering
+    numbering_part = doc.part.numbering_part
+    if numbering_part is None:
+        return None
+    numbering = numbering_part.numbering_definitions._numbering
     abstract_by_id, num_by_id = get_numbering_nodes(numbering)
     num_node = num_by_id.get(num_id)
     if num_node is None:
@@ -941,7 +937,7 @@ def collect_cover_paragraphs(doc: Document) -> list[object]:
         text = get_paragraph_text(paragraph)
         style_name = paragraph.style.name if paragraph.style is not None else ''
         is_corner = bool(text and COVER_CORNER_LABEL_RE.match(text))
-        is_title = bool(text and (style_name.startswith('文章标题') or (paragraph.alignment is not None and int(paragraph.alignment) == int(WD_ALIGN_PARAGRAPH.CENTER))))
+        is_title = bool(text and (style_name.startswith('文章标题') or (paragraph.alignment is not None and paragraph.alignment == WD_ALIGN_PARAGRAPH.CENTER)))
         if is_title and not title_ended:
             title_started = True
             cover_paragraphs.append(paragraph)
@@ -1066,7 +1062,7 @@ def infer_cover(doc: Document) -> dict[str, list[str] | str | None] | None:
         if style_name.startswith('文章标题') or style_name.startswith('Title') or style_name.startswith('Heading'):
             title_candidates.append(text)
             continue
-        if paragraph.alignment is not None and int(paragraph.alignment) == int(WD_ALIGN_PARAGRAPH.CENTER):
+        if paragraph.alignment is not None and paragraph.alignment == WD_ALIGN_PARAGRAPH.CENTER:
             title_candidates.append(text)
             continue
         meta.append(text)
@@ -1390,7 +1386,11 @@ def verify_heading_style_definitions(doc: Document, context: VerificationContext
     present_levels = get_heading_levels_present(context.expected_headings)
     for level in present_levels:
         spec = get_heading_spec(level)
-        style = doc.styles[get_heading_style_name(level)]
+        style_name = get_heading_style_name(level)
+        if style_name not in doc.styles:
+            failures.append(f'Heading {level} style "{style_name}" missing from document styles')
+            continue
+        style = doc.styles[style_name]
         if style.font.name != spec.font_name or style.font.size != spec.font_size or bool(style.font.bold) != bool(spec.bold):
             failures.append(f'Heading {level} style font mismatch')
         if get_outline_level(style) != min(level, 9) - 1:
@@ -1943,12 +1943,8 @@ def render_toc(doc: Document, toc_entries: list[tuple[int, str]]):
 
 def set_style_outline_level(style, level: int):
     p_pr = style._element.get_or_add_pPr()
-    for child in list(p_pr):
-        if child.tag == qn('w:outlineLvl'):
-            p_pr.remove(child)
-    outline = OxmlElement('w:outlineLvl')
+    outline = p_pr.get_or_add_outlineLvl()
     outline.set(qn('w:val'), str(min(level, 9) - 1))
-    p_pr.append(outline)
 
 
 def ensure_style_numbering(style, level: int):
