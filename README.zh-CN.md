@@ -4,7 +4,7 @@
 
 当前主要技能是 `skills/word-expert-formatting`，它是一个自定义 Claude Code skill，用于格式化中文 Word 内容，并支持把 Markdown 或纯文本本地生成 `.docx`，以及对已有 `.docx` 做原位刷新与核查。
 
-它现在已经同时支持 Mode A 与 Mode B 标题编号，并且 `--auto-toc` 会插入 Word 动态目录域，而不是静态目录文本。
+它使用纯十进制标题编号，并且 `--auto-toc` 会插入 Word 动态目录域，而不是静态目录文本。
 
 ## 技能列表
 
@@ -17,7 +17,7 @@
 用途：
 - 把原始 Markdown、TXT、HTML 或较粗糙的大纲整理成适合 Word 的结构化格式
 - 套用严格的中文正式文档排版模型
-- 同时支持 Mode A 与 Mode B 标题编号
+- 使用纯十进制标题编号
 - 当输入为 `.md`、`.markdown` 或 `.txt` 时，支持本地生成 `.docx`
 - 当输入为已有 `.docx` 时，支持原位规范化与核查
 
@@ -28,7 +28,7 @@
 `skills/word-expert-formatting/SKILL.md` 定义了：
 - 支持的输入形态
 - 标题层级规则
-- 编号模式以及选择它们的 CLI 参数
+- 标题编号规则
 - 封面识别规则
 - 标题、正文、表格和页脚页码的样式映射
 - 结构化格式化结果的输出契约
@@ -47,7 +47,7 @@
 脚本当前会：
 - 接收 `.md`、`.markdown`、`.txt` 和 `.docx`
 - 处理标题、段落、列表、表格、代码块、页脚页码和简单封面
-- 通过 `--numbering-mode` 支持 Mode A 与 Mode B 标题编号
+- 使用纯十进制标题编号
 - 在未检测到封面时，可通过 `--reserve-cover` 预留封面页
 - 在未检测到显式目录标题时，可通过 `--auto-toc` 插入 Word 动态目录页
 - 支持按单次运行显式指定首页 / 目录决策，并支持手动输入首页文字
@@ -61,7 +61,7 @@
 执行方式：
 
 ```bash
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc] [--numbering-mode A|B]
+python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
 ```
 
 如果省略 `output.docx`，脚本会在输入文件旁边生成同名输出文件。
@@ -116,7 +116,7 @@ skill 现在会把这些回答当作本次运行的显式决策：
 - 通过 `--auto-toc` 插入 Word 动态目录域
 - 通过 `--with-toc` 显式生成目录
 - 通过 `--without-toc` 显式禁止生成目录
-- 通过 `--numbering-mode` 支持 Mode A / Mode B 标题编号
+- 使用纯十进制标题编号
 - 当存在封面页时采用正式分页：封面无页码，正文从 1 开始重新编号
 - 保留结构的已有 `.docx` 原位刷新
 - 面向已有 `.docx` 的封面、目录、正文、表格、编号与结构计数核查
@@ -127,13 +127,40 @@ skill 现在会把这些回答当作本次运行的显式决策：
 - `skills/word-expert-formatting/scripts/text_to_docx.py:695`
 - `skills/word-expert-formatting/scripts/text_to_docx.py:822`
 
+## XML 调试旁路
+
+对于一些已有 `.docx` 的棘手问题，如果 Word 里的实际渲染和常规刷新结果不一致，现在还可以使用本地 XML 调试辅助脚本：
+
+```bash
+python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>
+python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>
+python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py repack <output-dir> <output.docx> --original <input.docx>
+```
+
+这条路径用于 XML 层面的调试与修复，不是默认生成流程。
+
+## 为什么在通用 DOCX 技能之外还要保留这个技能
+
+| 维度 | 通用 DOCX 技能 | `word-expert-formatting` |
+|---|---|---|
+| 定位 | 底层 Office/XML 工具箱 | 面向目标文档格式的端到端生产工作流 |
+| 主要职责 | 解包、检查、校验、重新打包 `.docx` | 按当前仓库格式契约生成或刷新文档 |
+| 擅长场景 | XML 手术、schema 问题、relationships、tracked changes | 封面、目录、标题层级、分页、正文与表格格式 |
+| 对已有 `.docx` 的处理 | 适合直接做 XML 级修复 | 适合在保留结构的前提下做原位规范化 |
+| 校验重点 | XML 合法性 | 语义层输出质量 + 结构保真 |
+| 使用成本 | 更高，更适合专家级排障 | 更低，更适合日常重复使用 |
+| 适用时机 | Word 渲染与 XML 不一致，或需要手术式低层修复时 | 常规格式化、刷新与核查工作 |
+
+可以把两者理解为：
+- 通用 DOCX 技能是 XML 手术工具箱
+- `word-expert-formatting` 是面向本仓库目标文档格式的可重复生产线
+- 推荐工作方式是：默认先走 `word-expert-formatting`，只有遇到棘手的底层问题时再回退到 XML 调试旁路
+
 ## 一个重要实现说明
 
-skill 契约里描述了 Mode A 和 Mode B 两种标题编号模式。
-
-当前 Python 脚本已经真正实现这两种模式：
-- Mode A 使用纯十进制标题编号
-- Mode B 使用中文一级标题编号（`一、二、三、...`），下级标题仍使用十进制层级编号
+skill 契约与当前 Python 脚本使用同一种标题编号方案：
+- 标题统一使用 `1`、`1.1`、`1.1.1` 这类纯十进制层级编号
+- 适用于技术文档、项目方案、实施计划以及类似的结构化报告
 
 另外，`--auto-toc` 现在会插入真正的 Word 动态目录域，而不是静态文本目录项。如果在 Word 中打开后目录未立即更新，请使用 Word 的“更新目录”操作。
 

@@ -4,7 +4,7 @@ This repository documents the skills under `skills/`.
 
 At the moment, the primary skill is `skills/word-expert-formatting`, a custom Claude Code skill for formatting Chinese Word content and supporting local `.docx` generation from Markdown or plain text, plus in-place refresh and verification for existing `.docx` files.
 
-It now supports both Mode A and Mode B heading numbering, and `--auto-toc` inserts a Word TOC field instead of static TOC text.
+It applies all-decimal heading numbering, and `--auto-toc` inserts a Word TOC field instead of static TOC text.
 
 ## Skills
 
@@ -17,7 +17,7 @@ Location:
 Purpose:
 - turn raw Markdown, TXT, HTML, or rough outlines into a Word-ready structured format
 - apply a strict Chinese formal-document style model
-- support both Mode A and Mode B heading numbering
+- apply all-decimal heading numbering
 - support local `.docx` generation when the input is `.md`, `.markdown`, or `.txt`
 - support in-place normalization and verification when the input is an existing `.docx`
 
@@ -28,7 +28,7 @@ Reference: `skills/word-expert-formatting/SKILL.md:1`
 `skills/word-expert-formatting/SKILL.md` defines:
 - supported input shapes
 - heading hierarchy rules
-- numbering modes and the CLI switch that selects them
+- heading numbering behavior
 - cover detection rules
 - style mapping for headings, body text, tables, and footer page numbers
 - output contracts for structured formatting results
@@ -47,7 +47,7 @@ The local implementation lives in:
 The script currently:
 - accepts `.md`, `.markdown`, `.txt`, and `.docx`
 - formats headings, paragraphs, lists, tables, code blocks, footer page numbers, and simple cover sections
-- supports both Mode A and Mode B heading numbering through `--numbering-mode`
+- uses all-decimal heading numbering
 - can reserve a placeholder cover page when no cover is detected
 - can generate a Word TOC field page when no explicit TOC heading is detected
 - can take explicit cover / TOC decisions for a run, including manual cover text input
@@ -61,7 +61,7 @@ Reference: `skills/word-expert-formatting/scripts/text_to_docx.py:840`
 Run:
 
 ```bash
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc] [--numbering-mode A|B]
+python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
 ```
 
 If `output.docx` is omitted, the script writes a file next to the input with the same basename.
@@ -116,7 +116,7 @@ Current script support includes:
 - Word TOC field insertion with `--auto-toc`
 - explicit TOC generation with `--with-toc`
 - explicit TOC suppression with `--without-toc`
-- Mode A / Mode B heading numbering with `--numbering-mode`
+- all-decimal heading numbering
 - formal pagination when a cover exists: no page number on the cover, body numbering restarts from 1
 - existing `.docx` in-place refresh with structure preservation
 - existing `.docx` verification for cover, TOC, body layout, tables, numbering, and structure counts
@@ -127,13 +127,40 @@ References:
 - `skills/word-expert-formatting/scripts/text_to_docx.py:695`
 - `skills/word-expert-formatting/scripts/text_to_docx.py:822`
 
+## XML debug lane
+
+For tricky existing `.docx` cases where Word rendering does not match the normal refresh result, this skill also includes a local XML debug helper:
+
+```bash
+python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>
+python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>
+python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py repack <output-dir> <output.docx> --original <input.docx>
+```
+
+This path is intended for XML-level debugging and repair, not for normal generation.
+
+## Why this skill exists alongside a generic DOCX skill
+
+| Dimension | Generic DOCX skill | `word-expert-formatting` |
+|---|---|---|
+| Positioning | Low-level Office/XML toolbox | End-to-end document-production workflow |
+| Main job | Unpack, inspect, validate, repack `.docx` | Generate or refresh documents to this repository's formatting contract |
+| Best at | XML surgery, schema issues, relationships, tracked changes | Cover, TOC, heading hierarchy, pagination, body and table formatting |
+| Existing `.docx` handling | Good for direct XML repair | Good for in-place normalization with structure preservation |
+| Validation focus | XML correctness | Semantic output quality + structure preservation |
+| User cost | Higher; better for expert debugging | Lower; better for repeatable daily use |
+| Use when | Word rendering and XML disagree, or XML needs surgical fixes | Normal formatting, refresh, and verification work |
+
+In short:
+- the generic DOCX skill is the XML surgery toolkit
+- `word-expert-formatting` is the repeatable production line for this repository's target document format
+- the intended workflow is: use `word-expert-formatting` by default, and fall back to the XML debug lane only for hard low-level cases
+
 ## Important implementation note
 
-The skill contract describes both Mode A and Mode B heading numbering.
-
-The current Python script now implements both:
-- Mode A uses all-decimal heading numbering
-- Mode B uses Chinese top-level headings (`一、`, `二、`, `三、`, ...) with decimal numbering for lower levels
+The skill contract and current Python script use a single heading numbering scheme:
+- headings use an all-decimal hierarchy such as `1`, `1.1`, and `1.1.1`
+- this is intended for technical documents, project plans, implementation plans, and similar structured reports
 
 Also, `--auto-toc` now inserts a real Word TOC field instead of static text entries. If the table of contents does not appear updated immediately in Word, use Word's update-table action after opening the document.
 
