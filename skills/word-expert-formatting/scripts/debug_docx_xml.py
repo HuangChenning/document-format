@@ -127,10 +127,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    ensure_tooling()
-    ensure_python_dependencies()
     parser = build_parser()
     args = parser.parse_args()
+    ensure_tooling()
+    ensure_python_dependencies()
     args.handler(args)
 
 

@@ -101,6 +101,7 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
         self.assertEqual('一百一十', chinese_counting_text(110))
         self.assertEqual('一百一十五', chinese_counting_text(115))
         self.assertEqual('一千零一十', chinese_counting_text(1010))
+        self.assertEqual('10000', chinese_counting_text(10000))
 
     def test_xml_debug_lane_guidance_is_added_for_numbering_failures(self) -> None:
         context = VerificationContext(

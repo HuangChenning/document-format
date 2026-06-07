@@ -944,6 +944,8 @@ def iter_paragraph_text_nodes(paragraph):
 def chinese_counting_text(value: int, force_one_ten: bool = False) -> str:
     if value <= 0:
         raise ValueError('Chinese counting value must be positive')
+    if value >= 10000:
+        return str(value)
     digits = '零一二三四五六七八九'
     if value < 10:
         return digits[value]
@@ -2518,7 +2520,6 @@ def render_markdown(
         render_toc(doc, analysis.toc_entries)
 
     heading_base_level = detect_heading_base_level(lines)
-    heading_counters = [0] * MAX_HEADING_LEVEL
     in_code = False
     code_lines: list[str] = []
     i = 0
@@ -2663,7 +2664,6 @@ def render_txt(
     if should_render_toc and not analysis.toc_exists and analysis.toc_entries:
         render_toc(doc, analysis.toc_entries)
 
-    heading_counters = [0] * MAX_HEADING_LEVEL
     for block in blocks:
         if block.kind == 'heading' and block.level is not None and block.title is not None:
             p = doc.add_paragraph(style=get_heading_style_id(block.level))
