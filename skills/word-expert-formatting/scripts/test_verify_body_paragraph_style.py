@@ -15,6 +15,7 @@ from text_to_docx import (
     apply_bullet_style,
     apply_paragraph_style,
     build_xml_debug_lane_guidance,
+    chinese_counting_text,
     configure_document,
     find_toc_region,
     get_numbering_level_node,
@@ -95,6 +96,11 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
         self.assertIsNotNone(p_style)
         self.assertEqual(doc.styles['Heading 1'].style_id, p_style.get(qn('w:val')))
 
+    def test_chinese_counting_text_keeps_one_in_compound_tens(self) -> None:
+        self.assertEqual('一百一十', chinese_counting_text(110))
+        self.assertEqual('一百一十五', chinese_counting_text(115))
+        self.assertEqual('一千零一十', chinese_counting_text(1010))
+
     def test_xml_debug_lane_guidance_is_added_for_numbering_failures(self) -> None:
         context = VerificationContext(
             expected_cover=None,
@@ -107,6 +113,7 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
         guidance = build_xml_debug_lane_guidance(['numbering: Heading 1 numbering pattern mismatch'], context)
 
         self.assertIn('DOCX XML structure or field-binding problem', guidance)
+        self.assertIn(str(Path(__file__).resolve().parent / 'debug_docx_xml.py'), DEBUG_XML_COMMANDS)
         self.assertIn(DEBUG_XML_COMMANDS, guidance)
 
     def test_xml_debug_lane_guidance_is_empty_for_simple_body_failures(self) -> None:

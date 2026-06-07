@@ -823,7 +823,10 @@ def get_num_abstract_id(num_node) -> str | None:
 
 
 def detach_inactive_heading_style_links(doc: Document, active_numbering_id: str) -> None:
-    numbering = doc.part.numbering_part.numbering_definitions._numbering
+    numbering_part = doc.part.numbering_part
+    if numbering_part is None:
+        return
+    numbering = numbering_part.numbering_definitions._numbering
     abstract_by_id, num_by_id = get_numbering_nodes(numbering)
     num_node = num_by_id.get(active_numbering_id)
     if num_node is None:
@@ -919,7 +922,7 @@ def iter_paragraph_text_nodes(paragraph):
             yield child
 
 
-def chinese_counting_text(value: int) -> str:
+def chinese_counting_text(value: int, force_one_ten: bool = False) -> str:
     if value <= 0:
         raise ValueError('Chinese counting value must be positive')
     digits = '零一二三四五六七八九'
@@ -927,7 +930,7 @@ def chinese_counting_text(value: int) -> str:
         return digits[value]
     if value < 20:
         suffix = digits[value % 10] if value % 10 else ''
-        return f'十{suffix}'
+        return f'一十{suffix}' if force_one_ten else f'十{suffix}'
     if value < 100:
         tens, ones = divmod(value, 10)
         suffix = digits[ones] if ones else ''
@@ -938,15 +941,15 @@ def chinese_counting_text(value: int) -> str:
         if remainder == 0:
             return prefix
         if remainder < 10:
-            return f'{prefix}零{chinese_counting_text(remainder)}'
-        return f'{prefix}{chinese_counting_text(remainder)}'
+            return f'{prefix}零{chinese_counting_text(remainder, force_one_ten=True)}'
+        return f'{prefix}{chinese_counting_text(remainder, force_one_ten=True)}'
     thousands, remainder = divmod(value, 1000)
     prefix = f'{digits[thousands]}千'
     if remainder == 0:
         return prefix
     if remainder < 100:
-        return f'{prefix}零{chinese_counting_text(remainder)}'
-    return f'{prefix}{chinese_counting_text(remainder)}'
+        return f'{prefix}零{chinese_counting_text(remainder, force_one_ten=True)}'
+    return f'{prefix}{chinese_counting_text(remainder, force_one_ten=True)}'
 
 
 def refresh_existing_toc_cache(doc: Document) -> bool:
@@ -963,7 +966,7 @@ def clear_toc_paragraph_indentation(paragraph) -> None:
 def normalize_existing_toc_paragraphs(doc: Document) -> None:
     for paragraph in doc.paragraphs:
         style_id = get_paragraph_style_id(paragraph)
-        if style_id is None or not style_id.startswith('TOC'):
+        if style_id is None or not style_id.upper().startswith('TOC'):
             continue
         clear_toc_paragraph_indentation(paragraph)
 
@@ -1133,11 +1136,11 @@ def remove_existing_cover(doc: Document) -> None:
     cover_paragraphs = collect_cover_paragraphs(doc)
     if not cover_paragraphs:
         return
-    body = doc._element.body
-    cover_elements = {paragraph._p for paragraph in cover_paragraphs}
-    for child in list(body):
-        if child in cover_elements:
-            body.remove(child)
+    for paragraph in cover_paragraphs:
+        p_element = paragraph._p
+        parent = p_element.getparent()
+        if parent is not None:
+            parent.remove(p_element)
     trim_leading_empty_body_paragraphs(doc)
 
 
@@ -1345,7 +1348,7 @@ def ensure_body_section_for_existing_docx(doc: Document) -> None:
     body.insert(list(body).index(boundary), section_break_paragraph)
 
 
-def normalize_existing_heading_paragraph(paragraph, counters: list[int] | None = None) -> None:
+def normalize_existing_heading_paragraph(paragraph) -> None:
     style_name = paragraph.style.name if paragraph.style is not None else ''
     if not style_name.startswith('Heading '):
         return
@@ -1856,9 +1859,12 @@ def verify_table_layout(doc: Document, context: VerificationContext) -> list[str
     return failures
 
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_DEBUG_XML_SCRIPT = _SCRIPT_DIR / "debug_docx_xml.py"
+
 DEBUG_XML_COMMANDS = (
-    "python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>\n"
-    "python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>"
+    f"python3 {_DEBUG_XML_SCRIPT} unpack <input.docx> <output-dir>\n"
+    f"python3 {_DEBUG_XML_SCRIPT} validate <output-dir> --original <input.docx>"
 )
 
 

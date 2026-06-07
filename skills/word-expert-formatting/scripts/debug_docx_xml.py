@@ -7,9 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-DOCX_SKILL_ROOT = Path(
-    "/Users/huangcn/.workbuddy/plugins/marketplaces/experts/plugins/document-skills/skills/docx"
-)
+DOCX_SKILL_ROOT = Path.home() / ".workbuddy/plugins/marketplaces/experts/plugins/document-skills/skills/docx"
 UNPACK_SCRIPT = DOCX_SKILL_ROOT / "scripts/office/unpack.py"
 VALIDATE_SCRIPT = DOCX_SKILL_ROOT / "scripts/office/validate.py"
 PACK_SCRIPT = DOCX_SKILL_ROOT / "scripts/office/pack.py"
