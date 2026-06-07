@@ -111,7 +111,7 @@ Current script support includes:
 - for existing `.docx` cover titles, refresh only corrects font and size; it does not change existing title alignment
 - placeholder cover insertion with `--reserve-cover`
 - explicit cover generation with `--with-cover` and `--cover-text`
-- explicit cover suppression with `--without-cover` for generated output, while existing `.docx` refresh keeps any cover that is already present
+- explicit cover suppression with `--without-cover` for generated output, while existing `.docx` refresh keeps any cover that is already present unchanged
 - explicit TOC detection (`目录`, `TOC`, `Table of Contents`)
 - Word TOC field insertion with `--auto-toc`
 - explicit TOC generation with `--with-toc`
@@ -165,7 +165,7 @@ The skill contract and current Python script use a single heading numbering sche
 Also, `--auto-toc` now inserts a real Word TOC field instead of static text entries. If the table of contents does not appear updated immediately in Word, use Word's update-table action after opening the document.
 
 The newer explicit switches are intended for skill-driven runs:
-- `--with-cover` / `--without-cover` override automatic cover detection for that run; on existing `.docx`, `--without-cover` only suppresses creating a new cover and does not remove one that already exists
+- `--with-cover` / `--without-cover` override automatic cover detection for that run; on existing `.docx`, `--without-cover` only suppresses creating a new cover and does not remove or restyle one that already exists
 - `--cover-text` implies `--with-cover` when used alone
 - `--with-toc` / `--without-toc` override fallback TOC generation for that run; on existing `.docx`, `--without-toc` only suppresses creating a new TOC and does not remove one that already exists
 - `--reserve-cover` and `--auto-toc` remain available for direct CLI compatibility

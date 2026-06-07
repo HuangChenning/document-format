@@ -111,7 +111,7 @@ skill 现在会把这些回答当作本次运行的显式决策：
 - 对已有 `.docx` 的封面标题，刷新时只修正字体和字号，不改变原有标题对齐方式
 - 通过 `--reserve-cover` 预留封面页
 - 通过 `--with-cover` 与 `--cover-text` 显式生成首页
-- 通过 `--without-cover` 显式禁止为生成型输出创建首页；对已有 `.docx` 刷新时，会保留原本已存在的封面
+- 通过 `--without-cover` 显式禁止为生成型输出创建首页；对已有 `.docx` 刷新时，会原样保留原本已存在的封面
 - 显式目录检测（`目录`、`TOC`、`Table of Contents`）
 - 通过 `--auto-toc` 插入 Word 动态目录域
 - 通过 `--with-toc` 显式生成目录
@@ -165,7 +165,7 @@ skill 契约与当前 Python 脚本使用同一种标题编号方案：
 另外，`--auto-toc` 现在会插入真正的 Word 动态目录域，而不是静态文本目录项。如果在 Word 中打开后目录未立即更新，请使用 Word 的“更新目录”操作。
 
 新增的显式开关主要用于 skill 驱动运行：
-- `--with-cover` / `--without-cover` 会覆盖本次运行的自动封面识别逻辑；对已有 `.docx`，`--without-cover` 只禁止新建封面，不删除已有封面
+- `--with-cover` / `--without-cover` 会覆盖本次运行的自动封面识别逻辑；对已有 `.docx`，`--without-cover` 只禁止新建封面，不删除也不重排已有封面
 - 单独使用 `--cover-text` 时，会隐式视为 `--with-cover`
 - `--with-toc` / `--without-toc` 会覆盖本次运行的目录兜底生成逻辑；对已有 `.docx`，`--without-toc` 只禁止新建目录，不删除已有目录
 - `--reserve-cover` 与 `--auto-toc` 仍保留，用于兼容直接 CLI 调用

@@ -160,6 +160,9 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
         paragraph.add_run('正文首段')
         apply_paragraph_style(paragraph, BODY_SPEC)
 
+        cover_run = next(run for paragraph in doc.paragraphs for run in paragraph.runs if run.text == '测试标题')
+        cover_run.font.name = '仿宋'
+
         input_path = Path(self.id()).with_suffix('.input.docx')
         output_path = Path(self.id()).with_suffix('.output.docx')
         doc.save(input_path)
@@ -179,6 +182,8 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
             )
             self.assertEqual([], failures)
             self.assertIn('正文首段', [paragraph.text for paragraph in refreshed.paragraphs])
+            cover_run = next(run for paragraph in refreshed.paragraphs for run in paragraph.runs if run.text == '测试标题')
+            self.assertEqual('仿宋', cover_run.font.name)
         finally:
             input_path.unlink(missing_ok=True)
             output_path.unlink(missing_ok=True)

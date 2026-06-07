@@ -192,7 +192,7 @@ Additional options:
 - `--reserve-cover`: when no explicit cover decision is provided and no cover is detected, insert a placeholder cover page
 - `--auto-toc`: when no explicit TOC decision is provided and no explicit TOC heading is detected, insert a generated Word TOC field page
 - `--with-cover`: always generate a cover page for this run and bypass automatic cover detection
-- `--without-cover`: never generate a cover page for this run and bypass automatic cover detection; for existing `.docx`, keep any cover that already exists
+- `--without-cover`: never generate a cover page for this run and bypass automatic cover detection; for existing `.docx`, keep any cover that already exists unchanged
 - `--cover-text <text>`: explicit cover text; the first non-empty line becomes the title and later non-empty lines become centered metadata; implies `--with-cover` when used alone
 - `--with-toc`: explicitly request generated TOC insertion for this run
 - `--without-toc`: explicitly suppress generated TOC insertion for this run; for existing `.docx`, keep any TOC that already exists

@@ -173,6 +173,7 @@ class VerificationContext:
         source_kind: str,
         toc_refresh_state: str = 'not_refreshed',
         structure_snapshot: dict[str, int] | None = None,
+        preserve_cover_format: bool = False,
     ):
         self.expected_cover = expected_cover
         self.expect_cover = expect_cover
@@ -181,6 +182,7 @@ class VerificationContext:
         self.source_kind = source_kind
         self.toc_refresh_state = toc_refresh_state
         self.structure_snapshot = structure_snapshot or {}
+        self.preserve_cover_format = preserve_cover_format
 
 
 def clear_document_body(doc: Document):
@@ -1436,7 +1438,8 @@ def refresh_existing_docx(
     inferred_cover = infer_cover(doc)
     has_cover_section = bool(inferred_cover)
     structure_snapshot = snapshot_document_structure(doc)
-    normalize_existing_cover(doc, inferred_cover)
+    if force_cover is not False:
+        normalize_existing_cover(doc, inferred_cover)
     if has_cover_section:
         ensure_body_section_for_existing_docx(doc)
     expected_headings = normalize_existing_docx_body(doc)
@@ -1463,6 +1466,7 @@ def refresh_existing_docx(
         source_kind='refreshed',
         toc_refresh_state='refreshed' if toc_cache_updated else 'not_refreshed',
         structure_snapshot=structure_snapshot,
+        preserve_cover_format=force_cover is False,
     )
     verify_document_workflow(doc, context)
     doc.save(output_path)
@@ -1544,6 +1548,7 @@ def build_verification_context(
     source_kind: str,
     toc_refresh_state: str = 'not_refreshed',
     structure_snapshot: dict[str, int] | None = None,
+    preserve_cover_format: bool = False,
 ) -> VerificationContext:
     return VerificationContext(
         expected_cover=expected_cover,
@@ -1553,6 +1558,7 @@ def build_verification_context(
         source_kind=source_kind,
         toc_refresh_state=toc_refresh_state,
         structure_snapshot=structure_snapshot,
+        preserve_cover_format=preserve_cover_format,
     )
 
 
@@ -1677,6 +1683,8 @@ def verify_cover_title_block(doc: Document, context: VerificationContext) -> lis
         if paragraph is None:
             failures.append(f'cover title missing: {title}')
             continue
+        if context.preserve_cover_format:
+            continue
         if get_run_font_names(paragraph) not in [set(), {COVER_TITLE_SPEC.font_name}]:
             failures.append(f'cover title font mismatch: {title}')
         if get_run_font_sizes(paragraph) not in [set(), {COVER_TITLE_SPEC.font_size.pt}]:
@@ -1703,6 +1711,8 @@ def verify_cover_corner_metadata(doc: Document, context: VerificationContext) ->
         paragraph = by_text.get(item)
         if paragraph is None:
             failures.append(f'cover corner metadata missing: {item}')
+            continue
+        if context.preserve_cover_format:
             continue
         if paragraph.alignment != WD_ALIGN_PARAGRAPH.LEFT:
             failures.append(f'cover corner metadata not left aligned: {item}')
