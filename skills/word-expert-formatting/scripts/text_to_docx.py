@@ -677,7 +677,10 @@ def ensure_title_numbering(doc: Document, numbering, abstract_id: str, numbering
 
 
 def ensure_numbering(doc: Document):
-    numbering = doc.part.numbering_part.numbering_definitions._numbering
+    numbering_part = doc.part.numbering_part
+    if numbering_part is None:
+        return
+    numbering = numbering_part.numbering_definitions._numbering
     ensure_title_numbering(doc, numbering, TITLE_NUMBERING_ABSTRACT_ID, TITLE_NUMBERING_ID)
 
     bullet_existing = numbering.xpath(f'./w:abstractNum[@w:abstractNumId="{BULLET_NUMBERING_ABSTRACT_ID}"]')
@@ -1134,6 +1137,8 @@ def trim_leading_empty_body_paragraphs(doc: Document) -> None:
         paragraph = DocxParagraph(first, doc._body)
         if get_paragraph_text(paragraph):
             return
+        if any(child.tag in {qn('w:drawing'), qn('w:pict'), qn('w:object')} for child in first.iter()):
+            return
         body.remove(first)
 
 
@@ -1383,7 +1388,6 @@ def normalize_existing_heading_paragraph(paragraph) -> None:
         else:
             paragraph.add_run(normalized)
     apply_paragraph_style(paragraph, spec)
-    clear_paragraph_numbering(paragraph)
     apply_heading_numbering(paragraph, level)
 
 
@@ -1402,10 +1406,6 @@ def normalize_existing_table(table) -> None:
                 if is_code_paragraph(paragraph):
                     continue
                 apply_paragraph_style(paragraph, TABLE_SPEC)
-                for run in paragraph.runs:
-                    if not run.text:
-                        continue
-                    set_run_font(run, TABLE_SPEC.font_name, TABLE_SPEC.font_size)
 
 
 def normalize_existing_docx_body(doc: Document) -> list[tuple[int, str]]:

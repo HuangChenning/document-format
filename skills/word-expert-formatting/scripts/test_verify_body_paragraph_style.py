@@ -25,6 +25,7 @@ from text_to_docx import (
     render_cover,
     render_toc,
     start_body_section,
+    trim_leading_empty_body_paragraphs,
     verify_body_paragraph_style,
     verify_cover_presence,
     verify_toc_presence,
@@ -176,6 +177,18 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
         self.assertIsNone(toc_heading)
         self.assertIsNone(toc_field)
         self.assertEqual('正文首段', doc.paragraphs[0].text)
+
+    def test_trim_leading_empty_body_paragraphs_preserves_drawing_paragraph(self) -> None:
+        doc = Document()
+        configure_document(doc)
+        paragraph = doc.add_paragraph()
+        run = paragraph.add_run()
+        drawing = OxmlElement('w:drawing')
+        run._r.append(drawing)
+
+        trim_leading_empty_body_paragraphs(doc)
+
+        self.assertIs(paragraph._p, doc.paragraphs[0]._p)
 
 
 if __name__ == '__main__':
