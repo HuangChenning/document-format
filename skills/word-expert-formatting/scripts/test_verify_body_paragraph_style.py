@@ -20,10 +20,10 @@ from text_to_docx import (
     find_toc_region,
     get_numbering_level_node,
     qn,
-    remove_existing_cover,
-    remove_existing_toc,
+    refresh_existing_docx,
     render_cover,
     render_toc,
+    resolve_output_path,
     start_body_section,
     trim_leading_empty_body_paragraphs,
     verify_body_paragraph_style,
@@ -151,7 +151,7 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
         self.assertIn('TOC not expected but heading was retained', failures)
         self.assertIn('TOC not expected but field was retained', failures)
 
-    def test_remove_existing_cover_keeps_body_content(self) -> None:
+    def test_refresh_existing_docx_keeps_cover_when_without_cover_is_requested(self) -> None:
         doc = Document()
         configure_document(doc)
         render_cover(doc, {'title': '测试标题', 'title_lines': ['测试标题'], 'meta': ['2026-06-07'], 'corner_meta': []})
@@ -160,11 +160,30 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
         paragraph.add_run('正文首段')
         apply_paragraph_style(paragraph, BODY_SPEC)
 
-        remove_existing_cover(doc)
+        input_path = Path(self.id()).with_suffix('.input.docx')
+        output_path = Path(self.id()).with_suffix('.output.docx')
+        doc.save(input_path)
+        try:
+            refresh_existing_docx(input_path, output_path, force_cover=False)
+            refreshed = Document(str(output_path))
+            self.assertIsNotNone(refreshed.paragraphs[0].text)
+            failures = verify_cover_presence(
+                refreshed,
+                VerificationContext(
+                    expected_cover={'title': '测试标题', 'title_lines': ['测试标题'], 'meta': ['2026-06-07'], 'corner_meta': []},
+                    expect_cover=True,
+                    expect_toc=False,
+                    expected_headings=[],
+                    source_kind='test',
+                ),
+            )
+            self.assertEqual([], failures)
+            self.assertIn('正文首段', [paragraph.text for paragraph in refreshed.paragraphs])
+        finally:
+            input_path.unlink(missing_ok=True)
+            output_path.unlink(missing_ok=True)
 
-        self.assertEqual('正文首段', doc.paragraphs[0].text)
-
-    def test_remove_existing_toc_clears_toc_region(self) -> None:
+    def test_refresh_existing_docx_keeps_toc_when_without_toc_is_requested(self) -> None:
         doc = Document()
         configure_document(doc)
         render_toc(doc, [(1, '第一章')])
@@ -172,12 +191,32 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
         paragraph.add_run('正文首段')
         apply_paragraph_style(paragraph, BODY_SPEC)
 
-        remove_existing_toc(doc)
+        input_path = Path(self.id()).with_suffix('.input.docx')
+        output_path = Path(self.id()).with_suffix('.output.docx')
+        doc.save(input_path)
+        try:
+            refresh_existing_docx(input_path, output_path, force_toc=False)
+            refreshed = Document(str(output_path))
+            toc_heading, toc_field = find_toc_region(refreshed)
+            self.assertIsNotNone(toc_heading)
+            self.assertIsNotNone(toc_field)
+            self.assertIn('正文首段', [paragraph.text for paragraph in refreshed.paragraphs])
+        finally:
+            input_path.unlink(missing_ok=True)
+            output_path.unlink(missing_ok=True)
 
-        toc_heading, toc_field = find_toc_region(doc)
-        self.assertIsNone(toc_heading)
-        self.assertIsNone(toc_field)
-        self.assertEqual('正文首段', doc.paragraphs[0].text)
+    def test_resolve_output_path_uses_refreshed_name_for_docx_input(self) -> None:
+        input_path = Path('/tmp/sample.docx').resolve()
+
+        output_path = resolve_output_path(input_path, None)
+
+        self.assertEqual(input_path.with_name('sample.refreshed.docx'), output_path)
+
+    def test_resolve_output_path_rejects_overwriting_source_docx(self) -> None:
+        input_path = Path('/tmp/sample.docx').resolve()
+
+        with self.assertRaises(SystemExit):
+            resolve_output_path(input_path, str(input_path))
 
     def test_trim_leading_empty_body_paragraphs_preserves_drawing_paragraph(self) -> None:
         doc = Document()

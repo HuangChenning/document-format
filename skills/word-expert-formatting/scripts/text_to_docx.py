@@ -1113,21 +1113,6 @@ def get_first_body_content_child(doc: Document):
     return None
 
 
-def remove_body_child_range(doc: Document, start, stop=None) -> None:
-    body = doc._element.body
-    removing = start is None
-    for child in list(body):
-        if child.tag == qn('w:sectPr'):
-            continue
-        if not removing:
-            if child != start:
-                continue
-            removing = True
-        if stop is not None and child == stop:
-            break
-        body.remove(child)
-
-
 def trim_leading_empty_body_paragraphs(doc: Document) -> None:
     body = doc._element.body
     while True:
@@ -1142,29 +1127,6 @@ def trim_leading_empty_body_paragraphs(doc: Document) -> None:
         if any(child.tag in {qn('w:drawing'), qn('w:pict'), qn('w:object')} for child in first.iter()):
             return
         body.remove(first)
-
-
-def remove_existing_toc(doc: Document) -> None:
-    toc_heading, toc_field = find_toc_region(doc)
-    if toc_heading is None and toc_field is None:
-        return
-    start = toc_heading._p if toc_heading is not None else toc_field._p
-    boundary = find_body_start_boundary(doc)
-    stop = None if boundary == start else boundary
-    remove_body_child_range(doc, start, stop)
-    trim_leading_empty_body_paragraphs(doc)
-
-
-def remove_existing_cover(doc: Document) -> None:
-    cover_paragraphs = collect_cover_paragraphs(doc)
-    if not cover_paragraphs:
-        return
-    for paragraph in cover_paragraphs:
-        p_element = paragraph._p
-        parent = p_element.getparent()
-        if parent is not None:
-            parent.remove(p_element)
-    trim_leading_empty_body_paragraphs(doc)
 
 
 def find_body_start_boundary(doc: Document) -> object | None:
@@ -1186,6 +1148,24 @@ def find_body_start_boundary(doc: Document) -> object | None:
             elif child.tag == qn('w:tbl'):
                 return child
         return anchor
+    cover_paragraphs = collect_cover_paragraphs(doc)
+    if cover_paragraphs:
+        last_cover = cover_paragraphs[-1]._p
+        passed_cover = False
+        for child in doc._element.body.iterchildren():
+            if child.tag == qn('w:sectPr'):
+                continue
+            if not passed_cover:
+                if child == last_cover:
+                    passed_cover = True
+                continue
+            if child.tag == qn('w:p'):
+                paragraph = DocxParagraph(child, doc._body)
+                if get_paragraph_text(paragraph):
+                    return child
+            elif child.tag == qn('w:tbl'):
+                return child
+        return None
     for child in doc._element.body.iterchildren():
         if child.tag == qn('w:p'):
             paragraph = DocxParagraph(child, doc._body)
@@ -1452,12 +1432,8 @@ def refresh_existing_docx(
     force_toc: bool | None = None,
 ) -> None:
     doc = Document(str(input_path))
-    if force_toc is False:
-        remove_existing_toc(doc)
-    if force_cover is False:
-        remove_existing_cover(doc)
     configure_document_styles(doc)
-    inferred_cover = None if force_cover is False else infer_cover(doc)
+    inferred_cover = infer_cover(doc)
     has_cover_section = bool(inferred_cover)
     structure_snapshot = snapshot_document_structure(doc)
     normalize_existing_cover(doc, inferred_cover)
@@ -1466,9 +1442,8 @@ def refresh_existing_docx(
     expected_headings = normalize_existing_docx_body(doc)
     for table in collect_tables(doc):
         normalize_existing_table(table)
-    toc_cache_updated = False if force_toc is False else refresh_existing_toc_cache(doc)
-    if force_toc is not False:
-        normalize_existing_toc_paragraphs(doc)
+    toc_cache_updated = refresh_existing_toc_cache(doc)
+    normalize_existing_toc_paragraphs(doc)
 
     if has_cover_section:
         configure_section_footer(doc.sections[0], show_page_number=False, page_number_start=None)
@@ -2767,6 +2742,17 @@ def parse_args():
     return parser.parse_args()
 
 
+def resolve_output_path(input_path: Path, output: str | None) -> Path:
+    if output is not None:
+        output_path = Path(output).expanduser().resolve()
+        if input_path.suffix.lower() == '.docx' and output_path == input_path:
+            raise SystemExit('Refusing to overwrite the source .docx file; choose a different output path')
+        return output_path
+    if input_path.suffix.lower() == '.docx':
+        return input_path.with_name(f'{input_path.stem}.refreshed.docx')
+    return input_path.with_suffix('.docx')
+
+
 def main():
     args = parse_args()
     input_path = Path(args.input).expanduser().resolve()
@@ -2774,11 +2760,7 @@ def main():
         raise SystemExit(f'Input file not found: {input_path}')
 
     check_runtime_dependencies(input_path)
-
-    if args.output:
-        output_path = Path(args.output).expanduser().resolve()
-    else:
-        output_path = input_path.with_suffix('.docx')
+    output_path = resolve_output_path(input_path, args.output)
 
     if args.cover_text is not None and args.force_cover is False:
         raise SystemExit('--cover-text cannot be used together with --without-cover')

@@ -2,7 +2,7 @@
 
 This repository documents the skills under `skills/`.
 
-At the moment, the primary skill is `skills/word-expert-formatting`, a custom Claude Code skill for formatting Chinese Word content and supporting local `.docx` generation from Markdown or plain text, plus in-place refresh and verification for existing `.docx` files.
+At the moment, the primary skill is `skills/word-expert-formatting`, a custom Claude Code skill for formatting Chinese Word content and supporting local `.docx` generation from Markdown or plain text, plus refreshed-copy normalization and verification for existing `.docx` files.
 
 It applies all-decimal heading numbering, and `--auto-toc` inserts a Word TOC field instead of static TOC text.
 
@@ -19,7 +19,7 @@ Purpose:
 - apply a strict Chinese formal-document style model
 - apply all-decimal heading numbering
 - support local `.docx` generation when the input is `.md`, `.markdown`, or `.txt`
-- support in-place normalization and verification when the input is an existing `.docx`
+- support refreshed-copy normalization and verification when the input is an existing `.docx`
 
 Reference: `skills/word-expert-formatting/SKILL.md:1`
 
@@ -51,7 +51,7 @@ The script currently:
 - can reserve a placeholder cover page when no cover is detected
 - can generate a Word TOC field page when no explicit TOC heading is detected
 - can take explicit cover / TOC decisions for a run, including manual cover text input
-- refreshes existing `.docx` files in place instead of deleting and rebuilding the body
+- refreshes existing `.docx` files into a new output file instead of deleting and rebuilding the body
 - preserves images, tables, page breaks, and section structure during existing `.docx` refresh
 - uses a more formal pagination model when a cover page exists: the cover has no page number and the body section restarts numbering from 1
 - writes a `.docx` file
@@ -64,7 +64,7 @@ Run:
 python3 skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
 ```
 
-If `output.docx` is omitted, the script writes a file next to the input with the same basename.
+If `output.docx` is omitted, `.md` / `.markdown` / `.txt` inputs still write a same-basename `.docx`, while `.docx` inputs write `<stem>.refreshed.docx` next to the source file.
 
 For skill-driven runs in this repository, ask first:
 1. whether to generate a cover page
@@ -111,14 +111,14 @@ Current script support includes:
 - for existing `.docx` cover titles, refresh only corrects font and size; it does not change existing title alignment
 - placeholder cover insertion with `--reserve-cover`
 - explicit cover generation with `--with-cover` and `--cover-text`
-- explicit cover suppression with `--without-cover`
+- explicit cover suppression with `--without-cover` for generated output, while existing `.docx` refresh keeps any cover that is already present
 - explicit TOC detection (`目录`, `TOC`, `Table of Contents`)
 - Word TOC field insertion with `--auto-toc`
 - explicit TOC generation with `--with-toc`
-- explicit TOC suppression with `--without-toc`
+- explicit TOC suppression with `--without-toc` for generated output, while existing `.docx` refresh keeps any TOC that is already present
 - all-decimal heading numbering
 - formal pagination when a cover exists: no page number on the cover, body numbering restarts from 1
-- existing `.docx` in-place refresh with structure preservation
+- refreshed-copy normalization for existing `.docx` with structure preservation
 - existing `.docx` verification for cover, TOC, body layout, tables, numbering, and structure counts
 - TXT paragraph blocks
 - minimal TXT heading detection for TOC generation
@@ -146,7 +146,7 @@ This path is intended for XML-level debugging and repair, not for normal generat
 | Positioning | Low-level Office/XML toolbox | End-to-end document-production workflow |
 | Main job | Unpack, inspect, validate, repack `.docx` | Generate or refresh documents to this repository's formatting contract |
 | Best at | XML surgery, schema issues, relationships, tracked changes | Cover, TOC, heading hierarchy, pagination, body and table formatting |
-| Existing `.docx` handling | Good for direct XML repair | Good for in-place normalization with structure preservation |
+| Existing `.docx` handling | Good for direct XML repair | Good for refreshed-copy normalization with structure preservation |
 | Validation focus | XML correctness | Semantic output quality + structure preservation |
 | User cost | Higher; better for expert debugging | Lower; better for repeatable daily use |
 | Use when | Word rendering and XML disagree, or XML needs surgical fixes | Normal formatting, refresh, and verification work |
@@ -165,9 +165,9 @@ The skill contract and current Python script use a single heading numbering sche
 Also, `--auto-toc` now inserts a real Word TOC field instead of static text entries. If the table of contents does not appear updated immediately in Word, use Word's update-table action after opening the document.
 
 The newer explicit switches are intended for skill-driven runs:
-- `--with-cover` / `--without-cover` override automatic cover detection for that run
+- `--with-cover` / `--without-cover` override automatic cover detection for that run; on existing `.docx`, `--without-cover` only suppresses creating a new cover and does not remove one that already exists
 - `--cover-text` implies `--with-cover` when used alone
-- `--with-toc` / `--without-toc` override fallback TOC generation for that run
+- `--with-toc` / `--without-toc` override fallback TOC generation for that run; on existing `.docx`, `--without-toc` only suppresses creating a new TOC and does not remove one that already exists
 - `--reserve-cover` and `--auto-toc` remain available for direct CLI compatibility
 
 When a cover page is present or `--reserve-cover` / `--with-cover` is used, the script now creates a separate body section so the cover stays unnumbered and the body starts again at page 1.

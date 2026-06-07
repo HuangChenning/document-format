@@ -13,7 +13,7 @@ This skill is optimized for inputs such as:
 - plain text
 - Markdown
 - HTML
-- existing `.docx` files that need in-place normalization
+- existing `.docx` files that need refreshed-copy normalization
 - rough outlines with heading levels
 - partially structured report drafts
 
@@ -25,7 +25,7 @@ This skill is not primarily about producing a `.docx` file by itself. Its main j
 
 If the user explicitly needs a finished `.docx`, use this skill to determine the formatting structure first, then hand off to a Word/document-generation workflow.
 
-In this repository, the local script workflow applies an all-decimal heading hierarchy, can insert a real Word TOC field when `--auto-toc` is enabled, supports existing `.docx` in-place refresh, and uses a more formal pagination model when a cover page exists.
+In this repository, the local script workflow applies an all-decimal heading hierarchy, can insert a real Word TOC field when `--auto-toc` is enabled, supports existing `.docx` refreshed-copy normalization, and uses a more formal pagination model when a cover page exists.
 
 ## Required workflow
 
@@ -151,7 +151,7 @@ When the user wants an actual `.docx` file in this repository, prefer the built-
 
 Use this workflow in two modes:
 - source `.md`, `.markdown`, or `.txt`: generate a new `.docx`
-- source `.docx`: refresh the existing document in place by normalizing cover, headings, body paragraphs, and table text without deleting and rebuilding the body
+- source `.docx`: read the existing document and write a refreshed copy by normalizing cover, headings, body paragraphs, and table text without deleting and rebuilding the body
 
 Before launching the local DOCX workflow through this skill, ask these questions in order:
 1. whether to generate a cover page
@@ -185,17 +185,17 @@ Before running the local DOCX workflow, check:
 
 The script now performs these checks at startup and exits with a clear error if a required dependency is missing.
 
-This local script is the default implementation for this repository because it already applies the core formatting rules from this skill, including heading mapping, body formatting, table formatting, page setup, page numbers, first-line indent in Word character units, explicit left-indent clearing, basic cover recognition, and existing `.docx` in-place refresh.
+This local script is the default implementation for this repository because it already applies the core formatting rules from this skill, including heading mapping, body formatting, table formatting, page setup, page numbers, first-line indent in Word character units, explicit left-indent clearing, basic cover recognition, and existing `.docx` refreshed-copy normalization.
 It now creates the output document from a blank Word document and does not depend on a local template `.docx` file.
 
 Additional options:
 - `--reserve-cover`: when no explicit cover decision is provided and no cover is detected, insert a placeholder cover page
 - `--auto-toc`: when no explicit TOC decision is provided and no explicit TOC heading is detected, insert a generated Word TOC field page
 - `--with-cover`: always generate a cover page for this run and bypass automatic cover detection
-- `--without-cover`: never generate a cover page for this run and bypass automatic cover detection
+- `--without-cover`: never generate a cover page for this run and bypass automatic cover detection; for existing `.docx`, keep any cover that already exists
 - `--cover-text <text>`: explicit cover text; the first non-empty line becomes the title and later non-empty lines become centered metadata; implies `--with-cover` when used alone
 - `--with-toc`: explicitly request generated TOC insertion for this run
-- `--without-toc`: explicitly suppress generated TOC insertion for this run
+- `--without-toc`: explicitly suppress generated TOC insertion for this run; for existing `.docx`, keep any TOC that already exists
 
 Compatibility behavior:
 - the new explicit cover / TOC options are the preferred path for skill-driven runs
@@ -247,7 +247,7 @@ Do not jump to XML editing by default. Prefer the normal workflow first, then re
 **Level 2 — recommend the XML debug lane**
 - verification fails around heading numbering chains, TOC/body consistency, field behavior, or section/page-break preservation
 - the generated document passes some checks, but visible Word output still disagrees with the expected result
-- an existing `.docx` needs in-place refresh and the issue appears tied to `numbering.xml`, `styles.xml`, `settings.xml`, or `document.xml.rels`
+- an existing `.docx` needs refreshed-copy normalization and the issue appears tied to `numbering.xml`, `styles.xml`, `settings.xml`, or `document.xml.rels`
 
 **Level 3 — strongly recommend the XML debug lane**
 - the same rendering/compatibility problem survives more than one targeted fix in the normal workflow
@@ -275,7 +275,7 @@ python3 skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output
 For existing `.docx` inputs:
 - do not delete and rebuild the body from extracted plain text
 - preserve existing images, drawings, embedded objects, tables, page breaks, and section structure
-- normalize the document in place after the detected body boundary
+- normalize the document into a refreshed copy after the detected body boundary
 - clear residual style-level and paragraph-level left indent before applying the standard body first-line indent
 - keep cover corner metadata left-aligned and unindented
 - treat a centered multi-line cover title block as one title block and enforce uniform title styling across every title line
