@@ -168,7 +168,7 @@ Apply the user's answers directly:
 Use:
 
 ```bash
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
+python3 skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
 ```
 
 
@@ -224,9 +224,9 @@ When an existing `.docx` behaves unexpectedly in Word and the normal `python-doc
 Use:
 
 ```bash
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py repack <output-dir> <output.docx> --original <input.docx>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py repack <output-dir> <output.docx> --original <input.docx>
 ```
 
 Use this lane when:
@@ -266,8 +266,8 @@ Use wording like:
 When useful, immediately provide the next commands:
 
 ```bash
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>
 ```
 
 ### Existing DOCX refresh strategy

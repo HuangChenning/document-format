@@ -7,7 +7,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-DOCX_SKILL_ROOT = Path.home() / ".workbuddy/plugins/marketplaces/experts/plugins/document-skills/skills/docx"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+LOCAL_DOCX_SKILL = REPO_ROOT / "skills/docx"
+DOCX_SKILL_ROOT = (
+    LOCAL_DOCX_SKILL
+    if LOCAL_DOCX_SKILL.exists()
+    else Path.home() / ".workbuddy/plugins/marketplaces/experts/plugins/document-skills/skills/docx"
+)
 UNPACK_SCRIPT = DOCX_SKILL_ROOT / "scripts/office/unpack.py"
 VALIDATE_SCRIPT = DOCX_SKILL_ROOT / "scripts/office/validate.py"
 PACK_SCRIPT = DOCX_SKILL_ROOT / "scripts/office/pack.py"

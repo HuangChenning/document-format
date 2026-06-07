@@ -272,7 +272,23 @@ def set_rpr_color(r_pr, color: str | None) -> None:
     color_node = r_pr.find(qn('w:color'))
     if color_node is None:
         color_node = OxmlElement('w:color')
-        r_pr.append(color_node)
+        inserted = False
+        after_tags = {
+            qn('w:spacing'),
+            qn('w:w'),
+            qn('w:kern'),
+            qn('w:position'),
+            qn('w:sz'),
+            qn('w:szCs'),
+            qn('w:lang'),
+        }
+        for idx, child in enumerate(list(r_pr)):
+            if child.tag in after_tags:
+                r_pr.insert(idx, color_node)
+                inserted = True
+                break
+        if not inserted:
+            r_pr.append(color_node)
     color_node.set(qn('w:val'), color)
 
 

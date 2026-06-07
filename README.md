@@ -61,7 +61,7 @@ Reference: `skills/word-expert-formatting/scripts/text_to_docx.py:840`
 Run:
 
 ```bash
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
+python3 skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
 ```
 
 If `output.docx` is omitted, the script writes a file next to the input with the same basename.
@@ -132,9 +132,9 @@ References:
 For tricky existing `.docx` cases where Word rendering does not match the normal refresh result, this skill also includes a local XML debug helper:
 
 ```bash
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py repack <output-dir> <output.docx> --original <input.docx>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py repack <output-dir> <output.docx> --original <input.docx>
 ```
 
 This path is intended for XML-level debugging and repair, not for normal generation.

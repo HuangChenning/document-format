@@ -61,7 +61,7 @@
 执行方式：
 
 ```bash
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
+python3 skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
 ```
 
 如果省略 `output.docx`，脚本会在输入文件旁边生成同名输出文件。
@@ -132,9 +132,9 @@ skill 现在会把这些回答当作本次运行的显式决策：
 对于一些已有 `.docx` 的棘手问题，如果 Word 里的实际渲染和常规刷新结果不一致，现在还可以使用本地 XML 调试辅助脚本：
 
 ```bash
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/debug_docx_xml.py repack <output-dir> <output.docx> --original <input.docx>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py repack <output-dir> <output.docx> --original <input.docx>
 ```
 
 这条路径用于 XML 层面的调试与修复，不是默认生成流程。
