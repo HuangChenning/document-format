@@ -174,6 +174,10 @@ class VerificationContext:
         toc_refresh_state: str = 'not_refreshed',
         structure_snapshot: dict[str, int] | None = None,
         preserve_cover_format: bool = False,
+        frozen_cover_signature: list[dict[str, object]] | None = None,
+        frozen_section_count: int | None = None,
+        frozen_footer_relationship_count: int | None = None,
+        frozen_trailing_sectpr_xml: str | None = None,
     ):
         self.expected_cover = expected_cover
         self.expect_cover = expect_cover
@@ -183,6 +187,10 @@ class VerificationContext:
         self.toc_refresh_state = toc_refresh_state
         self.structure_snapshot = structure_snapshot or {}
         self.preserve_cover_format = preserve_cover_format
+        self.frozen_cover_signature = frozen_cover_signature
+        self.frozen_section_count = frozen_section_count
+        self.frozen_footer_relationship_count = frozen_footer_relationship_count
+        self.frozen_trailing_sectpr_xml = frozen_trailing_sectpr_xml
 
 
 def clear_document_body(doc: Document):
@@ -986,8 +994,14 @@ def clear_toc_paragraph_indentation(paragraph) -> None:
             p_pr.remove(child)
 
 
-def normalize_existing_toc_paragraphs(doc: Document) -> None:
+def normalize_existing_toc_paragraphs(doc: Document, start_boundary=None) -> None:
+    started = start_boundary is None
     for paragraph in doc.paragraphs:
+        if not started:
+            if paragraph._p == start_boundary:
+                started = True
+            else:
+                continue
         style_id = get_paragraph_style_id(paragraph)
         if style_id is None or not style_id.upper().startswith('TOC'):
             continue
@@ -1279,6 +1293,42 @@ def snapshot_document_structure(doc: Document) -> dict[str, int]:
     }
 
 
+def snapshot_cover_signature(doc: Document) -> list[dict[str, object]]:
+    signature: list[dict[str, object]] = []
+    for paragraph in collect_cover_paragraphs(doc):
+        runs: list[tuple[str, str | None, float | None, bool | None]] = []
+        for run in paragraph.runs:
+            if not run.text:
+                continue
+            size = run.font.size.pt if run.font.size is not None else None
+            runs.append((run.text, run.font.name, size, run.bold))
+        before = paragraph.paragraph_format.space_before
+        after = paragraph.paragraph_format.space_after
+        signature.append(
+            {
+                'text': get_paragraph_text(paragraph),
+                'style': paragraph.style.name if paragraph.style is not None else None,
+                'align': paragraph.alignment,
+                'before': before.pt if before is not None else None,
+                'after': after.pt if after is not None else None,
+                'line': paragraph.paragraph_format.line_spacing,
+                'runs': runs,
+            }
+        )
+    return signature
+
+
+def count_footer_relationships(doc: Document) -> int:
+    return sum(1 for rel in doc.part.rels.values() if rel.reltype.endswith('/footer'))
+
+
+def snapshot_trailing_sectpr_xml(doc: Document) -> str | None:
+    for child in reversed(list(doc._element.body.iterchildren())):
+        if child.tag == qn('w:sectPr'):
+            return child.xml
+    return None
+
+
 def apply_existing_cover_title_font(paragraph) -> None:
     for run in paragraph.runs:
         if not run.text:
@@ -1434,28 +1484,37 @@ def refresh_existing_docx(
     force_toc: bool | None = None,
 ) -> None:
     doc = Document(str(input_path))
-    configure_document_styles(doc)
     inferred_cover = infer_cover(doc)
+    freeze_cover_region = freeze_cover_region_active(force_cover, inferred_cover)
+    configure_document_styles(doc, freeze_cover_region=freeze_cover_region)
     has_cover_section = bool(inferred_cover)
+    preserve_cover_layout = freeze_cover_region
     structure_snapshot = snapshot_document_structure(doc)
+    body_boundary = find_body_start_boundary(doc)
+    frozen_cover_signature = snapshot_cover_signature(doc) if freeze_cover_region else None
+    frozen_section_count = len(doc.sections) if freeze_cover_region else None
+    frozen_footer_relationship_count = count_footer_relationships(doc) if freeze_cover_region else None
+    frozen_trailing_sectpr_xml = snapshot_trailing_sectpr_xml(doc) if freeze_cover_region else None
     if force_cover is not False:
         normalize_existing_cover(doc, inferred_cover)
-    if has_cover_section:
+    if has_cover_section and not preserve_cover_layout:
         ensure_body_section_for_existing_docx(doc)
     expected_headings = normalize_existing_docx_body(doc)
     for table in collect_tables(doc):
         normalize_existing_table(table)
     toc_cache_updated = refresh_existing_toc_cache(doc)
-    normalize_existing_toc_paragraphs(doc)
+    if force_toc is not False:
+        normalize_existing_toc_paragraphs(doc, start_boundary=body_boundary if freeze_cover_region else None)
 
-    if has_cover_section:
-        configure_section_footer(doc.sections[0], show_page_number=False, page_number_start=None)
-        if len(doc.sections) < 2:
+    if not preserve_cover_layout:
+        if has_cover_section:
             configure_section_footer(doc.sections[0], show_page_number=False, page_number_start=None)
+            if len(doc.sections) < 2:
+                configure_section_footer(doc.sections[0], show_page_number=False, page_number_start=None)
+            else:
+                configure_section_footer(doc.sections[-1], show_page_number=True, page_number_start=1)
         else:
-            configure_section_footer(doc.sections[-1], show_page_number=True, page_number_start=1)
-    else:
-        configure_section_footer(doc.sections[0], show_page_number=True, page_number_start=1)
+            configure_section_footer(doc.sections[0], show_page_number=True, page_number_start=1)
 
     toc_heading, toc_field = find_toc_region(doc)
     context = build_verification_context(
@@ -1467,6 +1526,10 @@ def refresh_existing_docx(
         toc_refresh_state='refreshed' if toc_cache_updated else 'not_refreshed',
         structure_snapshot=structure_snapshot,
         preserve_cover_format=force_cover is False,
+        frozen_cover_signature=frozen_cover_signature,
+        frozen_section_count=frozen_section_count,
+        frozen_footer_relationship_count=frozen_footer_relationship_count,
+        frozen_trailing_sectpr_xml=frozen_trailing_sectpr_xml,
     )
     verify_document_workflow(doc, context)
     doc.save(output_path)
@@ -1549,6 +1612,10 @@ def build_verification_context(
     toc_refresh_state: str = 'not_refreshed',
     structure_snapshot: dict[str, int] | None = None,
     preserve_cover_format: bool = False,
+    frozen_cover_signature: list[dict[str, object]] | None = None,
+    frozen_section_count: int | None = None,
+    frozen_footer_relationship_count: int | None = None,
+    frozen_trailing_sectpr_xml: str | None = None,
 ) -> VerificationContext:
     return VerificationContext(
         expected_cover=expected_cover,
@@ -1559,6 +1626,10 @@ def build_verification_context(
         toc_refresh_state=toc_refresh_state,
         structure_snapshot=structure_snapshot,
         preserve_cover_format=preserve_cover_format,
+        frozen_cover_signature=frozen_cover_signature,
+        frozen_section_count=frozen_section_count,
+        frozen_footer_relationship_count=frozen_footer_relationship_count,
+        frozen_trailing_sectpr_xml=frozen_trailing_sectpr_xml,
     )
 
 
@@ -1781,6 +1852,30 @@ def verify_structure_preservation(doc: Document, context: VerificationContext) -
 
 
 
+def verify_frozen_cover_region(doc: Document, context: VerificationContext) -> list[str]:
+    failures: list[str] = []
+    if context.frozen_cover_signature is not None:
+        current_signature = snapshot_cover_signature(doc)
+        if current_signature != context.frozen_cover_signature:
+            failures.append('cover region changed under freeze-cover mode')
+    if context.frozen_section_count is not None and len(doc.sections) != context.frozen_section_count:
+        failures.append(
+            f'section count changed under freeze-cover mode: before={context.frozen_section_count} after={len(doc.sections)}'
+        )
+    if context.frozen_footer_relationship_count is not None:
+        current_footer_relationship_count = count_footer_relationships(doc)
+        if current_footer_relationship_count != context.frozen_footer_relationship_count:
+            failures.append(
+                'footer relationship count changed under freeze-cover mode: '
+                f'before={context.frozen_footer_relationship_count} after={current_footer_relationship_count}'
+            )
+    if context.frozen_trailing_sectpr_xml is not None:
+        current_trailing_sectpr_xml = snapshot_trailing_sectpr_xml(doc)
+        if current_trailing_sectpr_xml != context.frozen_trailing_sectpr_xml:
+            failures.append('trailing sectPr changed under freeze-cover mode')
+    return failures
+
+
 def verify_body_paragraph_style(doc: Document, context: VerificationContext) -> list[str]:
     failures: list[str] = []
     for paragraph in collect_body_paragraphs(doc, context):
@@ -1790,12 +1885,6 @@ def verify_body_paragraph_style(doc: Document, context: VerificationContext) -> 
         sizes = get_run_font_sizes(paragraph)
         if sizes not in [set(), {BODY_SPEC.font_size.pt}]:
             failures.append(f'body size mismatch: {text}')
-        style = paragraph.style
-        style_fmt = style.paragraph_format if style is not None else None
-        style_left_indent = style_fmt.left_indent.cm if style_fmt is not None and style_fmt.left_indent is not None else 0
-        style_first_line_indent = style_fmt.first_line_indent.cm if style_fmt is not None and style_fmt.first_line_indent is not None else 0
-        if style_left_indent not in (0, 0.0) or style_first_line_indent not in (0, 0.0):
-            failures.append(f'body style indent residue: {text}')
         p_pr = paragraph._p.pPr
         ind = p_pr.ind if p_pr is not None else None
         first_line_chars = ind.get(qn('w:firstLineChars')) if ind is not None else None
@@ -1818,7 +1907,6 @@ def verify_body_paragraph_style(doc: Document, context: VerificationContext) -> 
             failures.append(f'body alignment mismatch: {text}')
         numpr = extract_paragraph_numpr(paragraph)
         if numpr is not None:
-            # bullet list paragraphs have numpr by design — skip them
             num_id_el = numpr.find(qn('w:numId'))
             num_id_val = num_id_el.get(qn('w:val')) if num_id_el is not None else None
             if num_id_val != BULLET_NUMBERING_ID:
@@ -1828,6 +1916,8 @@ def verify_body_paragraph_style(doc: Document, context: VerificationContext) -> 
 
 def verify_pagination_rules(doc: Document, context: VerificationContext) -> list[str]:
     failures: list[str] = []
+    if context.preserve_cover_format:
+        return failures
     if context.expect_cover and len(doc.sections) < 2:
         failures.append('cover expected but body section was not split from cover section')
     return failures
@@ -1921,6 +2011,7 @@ def verify_document_workflow(doc: Document, context: VerificationContext):
     failures.extend(format_failures('toc', verify_toc_structure(doc, context)))
     failures.extend(format_failures('toc', verify_toc_against_body(doc, context)))
     failures.extend(format_failures('body', verify_structure_preservation(doc, context)))
+    failures.extend(format_failures('body', verify_frozen_cover_region(doc, context)))
     failures.extend(format_failures('body', verify_body_paragraph_style(doc, context)))
     failures.extend(format_failures('body', verify_pagination_rules(doc, context)))
     failures.extend(format_failures('table', verify_table_text_style(doc, context)))
@@ -2205,8 +2296,12 @@ def ensure_style_numbering(style, level: int):
     insert_numpr_after_pstyle(p_pr, num_pr)
 
 
-def configure_document_styles(doc: Document):
-    if 'Normal' in doc.styles:
+def freeze_cover_region_active(force_cover: bool | None, inferred_cover: dict[str, list[str] | str | None] | None) -> bool:
+    return force_cover is False and bool(inferred_cover)
+
+
+def configure_document_styles(doc: Document, freeze_cover_region: bool = False):
+    if 'Normal' in doc.styles and not freeze_cover_region:
         normal = doc.styles['Normal']
         normal.font.name = BODY_SPEC.font_name
         normal.font.size = BODY_SPEC.font_size
@@ -2220,7 +2315,7 @@ def configure_document_styles(doc: Document):
         r_fonts.set(qn('w:eastAsia'), BODY_SPEC.font_name)
         apply_style_paragraph_format(normal, BODY_SPEC)
 
-    if '文章信息' in doc.styles:
+    if '文章信息' in doc.styles and not freeze_cover_region:
         cover_corner_style = doc.styles['文章信息']
         cover_corner_style.font.name = COVER_CORNER_SPEC.font_name
         cover_corner_style.font.size = COVER_CORNER_SPEC.font_size

@@ -17,6 +17,7 @@ from text_to_docx import (
     build_xml_debug_lane_guidance,
     chinese_counting_text,
     configure_document,
+    count_footer_relationships,
     find_toc_region,
     get_numbering_level_node,
     qn,
@@ -24,6 +25,8 @@ from text_to_docx import (
     render_cover,
     render_toc,
     resolve_output_path,
+    snapshot_cover_signature,
+    snapshot_trailing_sectpr_xml,
     start_body_section,
     trim_leading_empty_body_paragraphs,
     verify_body_paragraph_style,
@@ -162,6 +165,10 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
 
         cover_run = next(run for paragraph in doc.paragraphs for run in paragraph.runs if run.text == '测试标题')
         cover_run.font.name = '仿宋'
+        original_sections = len(doc.sections)
+        original_cover_signature = snapshot_cover_signature(doc)
+        original_footer_relationship_count = count_footer_relationships(doc)
+        original_trailing_sectpr_xml = snapshot_trailing_sectpr_xml(doc)
 
         input_path = Path(self.id()).with_suffix('.input.docx')
         output_path = Path(self.id()).with_suffix('.output.docx')
@@ -184,6 +191,10 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
             self.assertIn('正文首段', [paragraph.text for paragraph in refreshed.paragraphs])
             cover_run = next(run for paragraph in refreshed.paragraphs for run in paragraph.runs if run.text == '测试标题')
             self.assertEqual('仿宋', cover_run.font.name)
+            self.assertEqual(original_sections, len(refreshed.sections))
+            self.assertEqual(original_cover_signature, snapshot_cover_signature(refreshed))
+            self.assertEqual(original_footer_relationship_count, count_footer_relationships(refreshed))
+            self.assertEqual(original_trailing_sectpr_xml, snapshot_trailing_sectpr_xml(refreshed))
         finally:
             input_path.unlink(missing_ok=True)
             output_path.unlink(missing_ok=True)
@@ -206,6 +217,38 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
             self.assertIsNotNone(toc_heading)
             self.assertIsNotNone(toc_field)
             self.assertIn('正文首段', [paragraph.text for paragraph in refreshed.paragraphs])
+        finally:
+            input_path.unlink(missing_ok=True)
+            output_path.unlink(missing_ok=True)
+
+    def test_refresh_existing_docx_keeps_cover_frozen_when_toc_decision_changes(self) -> None:
+        doc = Document()
+        configure_document(doc)
+        render_cover(doc, {'title': '测试标题', 'title_lines': ['测试标题'], 'meta': ['2026-06-07'], 'corner_meta': []})
+        start_body_section(doc)
+        render_toc(doc, [(1, '第一章')])
+        paragraph = doc.add_paragraph()
+        paragraph.add_run('正文首段')
+        apply_paragraph_style(paragraph, BODY_SPEC)
+
+        original_cover_signature = snapshot_cover_signature(doc)
+        original_sections = len(doc.sections)
+        original_footer_relationship_count = count_footer_relationships(doc)
+        original_trailing_sectpr_xml = snapshot_trailing_sectpr_xml(doc)
+
+        input_path = Path(self.id()).with_suffix('.input.docx')
+        output_path = Path(self.id()).with_suffix('.output.docx')
+        doc.save(input_path)
+        try:
+            refresh_existing_docx(input_path, output_path, force_cover=False, force_toc=True)
+            refreshed = Document(str(output_path))
+            self.assertEqual(original_cover_signature, snapshot_cover_signature(refreshed))
+            self.assertEqual(original_sections, len(refreshed.sections))
+            self.assertEqual(original_footer_relationship_count, count_footer_relationships(refreshed))
+            self.assertEqual(original_trailing_sectpr_xml, snapshot_trailing_sectpr_xml(refreshed))
+            toc_heading, toc_field = find_toc_region(refreshed)
+            self.assertIsNotNone(toc_heading)
+            self.assertIsNotNone(toc_field)
         finally:
             input_path.unlink(missing_ok=True)
             output_path.unlink(missing_ok=True)

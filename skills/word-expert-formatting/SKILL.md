@@ -151,7 +151,7 @@ When the user wants an actual `.docx` file in this repository, prefer the built-
 
 Use this workflow in two modes:
 - source `.md`, `.markdown`, or `.txt`: generate a new `.docx`
-- source `.docx`: read the existing document and write a refreshed copy by normalizing cover, headings, body paragraphs, and table text without deleting and rebuilding the body
+- source `.docx`: read the existing document and write a refreshed copy by normalizing only the body-boundary-and-after region, while preserving existing document structure and honoring explicit cover / TOC decisions
 
 Before launching the local DOCX workflow through this skill, ask these questions in order:
 1. whether to generate a cover page
@@ -192,10 +192,10 @@ Additional options:
 - `--reserve-cover`: when no explicit cover decision is provided and no cover is detected, insert a placeholder cover page
 - `--auto-toc`: when no explicit TOC decision is provided and no explicit TOC heading is detected, insert a generated Word TOC field page
 - `--with-cover`: always generate a cover page for this run and bypass automatic cover detection
-- `--without-cover`: never generate a cover page for this run and bypass automatic cover detection; for existing `.docx`, keep any cover that already exists unchanged
+- `--without-cover`: never generate a cover page for this run and bypass automatic cover detection; for existing `.docx`, fully freeze any existing cover region and do not restyle it, reseat sections, rewrite footers, or change page numbering before the detected body boundary
 - `--cover-text <text>`: explicit cover text; the first non-empty line becomes the title and later non-empty lines become centered metadata; implies `--with-cover` when used alone
 - `--with-toc`: explicitly request generated TOC insertion for this run
-- `--without-toc`: explicitly suppress generated TOC insertion for this run; for existing `.docx`, keep any TOC that already exists
+- `--without-toc`: explicitly suppress generated TOC insertion for this run; for existing `.docx`, keep any TOC that already exists, and when the cover region is frozen do not let TOC handling modify content before the detected body boundary
 
 Compatibility behavior:
 - the new explicit cover / TOC options are the preferred path for skill-driven runs
@@ -276,6 +276,8 @@ For existing `.docx` inputs:
 - do not delete and rebuild the body from extracted plain text
 - preserve existing images, drawings, embedded objects, tables, page breaks, and section structure
 - normalize the document into a refreshed copy after the detected body boundary
+- when the user chooses not to generate or update the cover, fully freeze the existing cover region and allow no cover-region formatting, section, footer, or page-number changes
+- keep TOC handling behind the detected body boundary when the cover region is frozen
 - clear residual style-level and paragraph-level left indent before applying the standard body first-line indent
 - keep cover corner metadata left-aligned and unindented
 - treat a centered multi-line cover title block as one title block and enforce uniform title styling across every title line

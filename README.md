@@ -53,7 +53,9 @@ The script currently:
 - can take explicit cover / TOC decisions for a run, including manual cover text input
 - refreshes existing `.docx` files into a new output file instead of deleting and rebuilding the body
 - preserves images, tables, page breaks, and section structure during existing `.docx` refresh
-- uses a more formal pagination model when a cover page exists: the cover has no page number and the body section restarts numbering from 1
+- fully freezes the existing cover region when `--without-cover` is chosen for an existing `.docx`, and only normalizes content after the detected body boundary
+- still allows explicit TOC decisions during existing `.docx` refresh without letting TOC handling modify the frozen cover region
+- uses a more formal pagination model when a cover page exists for generated output or for existing `.docx` runs that are not in frozen-cover mode: the cover has no page number and the body section restarts numbering from 1
 - writes a `.docx` file
 
 Reference: `skills/word-expert-formatting/scripts/text_to_docx.py:840`
@@ -74,8 +76,8 @@ For skill-driven runs in this repository, ask first:
 The skill now treats those answers as explicit per-run decisions:
 - generate cover + non-empty text: render the first non-empty line as the cover title and later non-empty lines as centered metadata
 - generate cover + empty text: render a blank placeholder cover page
-- do not generate cover: suppress automatic cover detection and placeholder insertion for that run
-- TOC generation is asked every time and then mapped to the script invocation for that run
+- do not generate cover: suppress automatic cover detection and placeholder insertion for that run; for an existing `.docx`, this also means the existing cover region is fully frozen and no cover-region formatting, section, footer, or page-number changes are allowed
+- TOC generation is asked every time and then mapped to the script invocation for that run; when the existing cover region is frozen, TOC handling must stay after the detected body boundary
 
 References:
 - `skills/word-expert-formatting/SKILL.md:127`
