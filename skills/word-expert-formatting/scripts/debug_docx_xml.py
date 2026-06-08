@@ -41,7 +41,7 @@ def ensure_python_dependencies() -> None:
         "Missing Python dependencies for XML debug lane:\n"
         f"{status_lines}\n"
         "Install the missing modules first, for example with:\n"
-        f"! {sys.executable} -m pip install {install_modules}"
+        f"{sys.executable} -m pip install {install_modules}"
     )
 
 

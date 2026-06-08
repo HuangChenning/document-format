@@ -961,7 +961,15 @@ def get_paragraph_style_id(paragraph) -> str | None:
 def iter_paragraph_text_nodes(paragraph):
     for child in paragraph._p.iter():
         if child.tag == qn('w:t'):
-            yield child
+            parent = child.getparent()
+            is_deleted = False
+            while parent is not None and parent != paragraph._p:
+                if parent.tag == qn('w:del'):
+                    is_deleted = True
+                    break
+                parent = parent.getparent()
+            if not is_deleted:
+                yield child
 
 
 def chinese_counting_text(value: int, force_one_ten: bool = False) -> str:
