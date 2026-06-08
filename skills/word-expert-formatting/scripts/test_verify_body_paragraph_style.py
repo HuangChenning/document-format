@@ -20,6 +20,7 @@ from text_to_docx import (
     count_footer_relationships,
     find_toc_region,
     get_numbering_level_node,
+    normalize_existing_toc_paragraphs,
     qn,
     refresh_existing_docx,
     render_cover,
@@ -266,6 +267,12 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             resolve_output_path(input_path, str(input_path))
 
+    def test_resolve_output_path_rejects_overwriting_source_markdown(self) -> None:
+        input_path = Path('/tmp/sample.md').resolve()
+
+        with self.assertRaises(SystemExit):
+            resolve_output_path(input_path, str(input_path))
+
     def test_trim_leading_empty_body_paragraphs_preserves_drawing_paragraph(self) -> None:
         doc = Document()
         configure_document(doc)
@@ -277,6 +284,36 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
         trim_leading_empty_body_paragraphs(doc)
 
         self.assertIs(paragraph._p, doc.paragraphs[0]._p)
+
+    def test_trim_leading_empty_body_paragraphs_preserves_sectpr_paragraph(self) -> None:
+        doc = Document()
+        configure_document(doc)
+        paragraph = doc.add_paragraph()
+        p_pr = paragraph._p.get_or_add_pPr()
+        p_pr.append(OxmlElement('w:sectPr'))
+
+        trim_leading_empty_body_paragraphs(doc)
+
+        self.assertIs(paragraph._p, doc.paragraphs[0]._p)
+
+    def test_normalize_existing_toc_paragraphs_starts_after_table_boundary(self) -> None:
+        doc = Document()
+        configure_document(doc)
+        table = doc.add_table(rows=1, cols=1)
+        table.cell(0, 0).text = '封面后表格'
+        paragraph = doc.add_paragraph()
+        paragraph.add_run('目录项')
+        p_pr = paragraph._p.get_or_add_pPr()
+        p_style = OxmlElement('w:pStyle')
+        p_style.set(qn('w:val'), 'TOC1')
+        p_pr.append(p_style)
+        ind = p_pr.get_or_add_ind()
+        ind.set(qn('w:left'), '420')
+
+        normalize_existing_toc_paragraphs(doc, start_boundary=table._tbl)
+
+        ind = paragraph._p.pPr.ind
+        self.assertTrue(ind is None or ind.get(qn('w:left')) in {None, '0'})
 
 
 if __name__ == '__main__':

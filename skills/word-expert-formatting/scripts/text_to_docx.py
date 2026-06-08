@@ -290,7 +290,20 @@ def set_rpr_color(r_pr, color: str | None) -> None:
             qn('w:position'),
             qn('w:sz'),
             qn('w:szCs'),
+            qn('w:highlight'),
+            qn('w:u'),
+            qn('w:effect'),
+            qn('w:bdr'),
+            qn('w:shd'),
+            qn('w:fitText'),
+            qn('w:vertAlign'),
+            qn('w:rtl'),
+            qn('w:cs'),
+            qn('w:em'),
             qn('w:lang'),
+            qn('w:eastAsianLayout'),
+            qn('w:specVanish'),
+            qn('w:oMath'),
         }
         for idx, child in enumerate(list(r_pr)):
             if child.tag in after_tags:
@@ -996,16 +1009,18 @@ def clear_toc_paragraph_indentation(paragraph) -> None:
 
 def normalize_existing_toc_paragraphs(doc: Document, start_boundary=None) -> None:
     started = start_boundary is None
-    for paragraph in doc.paragraphs:
+    for block in iter_body_blocks(doc):
+        element = block._element if hasattr(block, '_element') else None
         if not started:
-            if paragraph._p == start_boundary:
-                started = True
-            else:
+            if element != start_boundary:
                 continue
-        style_id = get_paragraph_style_id(paragraph)
+            started = True
+        if not isinstance(block, DocxParagraph):
+            continue
+        style_id = get_paragraph_style_id(block)
         if style_id is None or not style_id.upper().startswith('TOC'):
             continue
-        clear_toc_paragraph_indentation(paragraph)
+        clear_toc_paragraph_indentation(block)
 
 
 def get_paragraph_text(paragraph) -> str:
@@ -1141,6 +1156,9 @@ def trim_leading_empty_body_paragraphs(doc: Document) -> None:
         if get_paragraph_text(paragraph):
             return
         if any(child.tag in {qn('w:drawing'), qn('w:pict'), qn('w:object')} for child in first.iter()):
+            return
+        p_pr = first.pPr
+        if p_pr is not None and p_pr.find(qn('w:sectPr')) is not None:
             return
         body.remove(first)
 
@@ -2850,8 +2868,8 @@ def parse_args():
 def resolve_output_path(input_path: Path, output: str | None) -> Path:
     if output is not None:
         output_path = Path(output).expanduser().resolve()
-        if input_path.suffix.lower() == '.docx' and output_path == input_path:
-            raise SystemExit('Refusing to overwrite the source .docx file; choose a different output path')
+        if output_path == input_path:
+            raise SystemExit('Refusing to overwrite the source file; choose a different output path')
         return output_path
     if input_path.suffix.lower() == '.docx':
         return input_path.with_name(f'{input_path.stem}.refreshed.docx')
