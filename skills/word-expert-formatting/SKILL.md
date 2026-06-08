@@ -1,6 +1,6 @@
 ---
 name: word-expert-formatting
-description: "Use this skill whenever the user wants to format Chinese Word content according to a strict document style guide, especially for 公文, 商务报告, formal reports, or .docx deliverables with required heading levels, cover page text, tables, page numbers, fonts, line spacing, paragraph spacing, first-line indentation, or Chinese numbering patterns. Trigger when the user mentions Word 排版, 文档格式规范, 标题层级, 一级标题/二级标题, 模式A/模式B, 中文编号, 封面, 页脚页码, 表格格式, 宋体, 四号, 小四, 五号, 首行缩进, or asks to turn raw text / Markdown / TXT / HTML into a Word-ready structured format. If the user needs a final `.docx` file from `.md`, `.markdown`, or `.txt` in this repository, use the local script workflow in this skill instead of only describing the format. Do not use this skill for PDFs, spreadsheets, slide decks, or generic writing requests without formatting constraints."
+description: "Use this skill whenever the user wants to format Chinese Word content according to a strict document style guide, especially for 公文, 商务报告, formal reports, or .docx deliverables with required heading levels, cover page text, tables, page numbers, fonts, line spacing, paragraph spacing, first-line indentation, or Chinese numbering patterns. Trigger when the user mentions Word 排版, 文档格式规范, 标题层级, 一级标题/二级标题, 中文编号, 封面, 页脚页码, 表格格式, 宋体, 四号, 小四, 五号, 首行缩进, or asks to turn raw text / Markdown / TXT / HTML into a Word-ready structured format. If the user needs a final `.docx` file from `.md`, `.markdown`, or `.txt` in this repository, use the local script workflow in this skill instead of only describing the format. Do not use this skill for PDFs, spreadsheets, slide decks, or generic writing requests without formatting constraints."
 ---
 
 # Word expert formatting
@@ -13,7 +13,7 @@ This skill is optimized for inputs such as:
 - plain text
 - Markdown
 - HTML
-- existing `.docx` files that need in-place normalization
+- existing `.docx` files that need refreshed-copy normalization
 - rough outlines with heading levels
 - partially structured report drafts
 
@@ -25,7 +25,7 @@ This skill is not primarily about producing a `.docx` file by itself. Its main j
 
 If the user explicitly needs a finished `.docx`, use this skill to determine the formatting structure first, then hand off to a Word/document-generation workflow.
 
-In this repository, the local script workflow now directly supports both Mode A and Mode B heading numbering, can insert a real Word TOC field when `--auto-toc` is enabled, supports existing `.docx` in-place refresh, and uses a more formal pagination model when a cover page exists.
+In this repository, the local script workflow applies an all-decimal heading hierarchy, can insert a real Word TOC field when `--auto-toc` is enabled, supports existing `.docx` refreshed-copy normalization, and uses a more formal pagination model when a cover page exists.
 
 ## Required workflow
 
@@ -43,26 +43,21 @@ Classify the input into these regions when present:
 
 If a region is absent, do not invent it.
 
-### 2. Determine numbering mode
+### 2. Determine heading numbering
 
-Before formatting, decide which heading numbering mode applies.
+Before formatting, use the default all-decimal heading hierarchy.
 
-- **Mode A: all-numeric hierarchy**
+- **Heading hierarchy**
   - level 1 → `1`, `2`, `3`
   - level 2 → `1.1`, `1.2`
   - level 3 → `1.1.1`
   - level 4 → `1.1.1.1`
   - level 5 → `1.1.1.1.1`
-- **Mode B: Chinese top-level headings**
-  - level 1 → `一、`, `二、`, `三、`
-  - level 2 → `1.1`, `1.2`
-  - level 3 → `1.1.1`
-  - level 4 → `1.1.1.1`
-  - level 5 → `1.1.1.1.1`
 
-Default to **Mode A** unless the user explicitly asks for Mode B or clearly uses that pattern.
+Selection guidance:
+- use this hierarchy when the document should use Arabic numerals at every heading level, such as technical documents, project plans, implementation plans, or documents that already use `1` / `1.1` / `1.1.1`
 
-If the source content has inconsistent numbering, normalize it to the selected mode.
+If the source content has inconsistent numbering, normalize it to this hierarchy.
 
 ### 3. Rebuild heading hierarchy
 
@@ -91,8 +86,7 @@ For every heading level that exists in the source:
 - if a level is present in the body, the same level must be treated consistently in headings, cross-references, and TOC entries
 
 For numbering behavior:
-- Mode A uses one continuous all-decimal path across every present heading level
-- Mode B uses Chinese numbering only for level 1 and decimal child paths for every deeper level
+- use one continuous all-decimal path across every present heading level
 - if the source contains deeper levels than level 5, continue the same decimal path instead of inventing a new numbering pattern
 - never leave one heading level manually numbered while an adjacent heading level uses automatic numbering unless the user explicitly asked for that mixed behavior
 
@@ -110,7 +104,7 @@ If any one of these three layers is inconsistent, treat the heading conversion f
 | Element | Font | Size | Line spacing | Space before | Space after | Other |
 |---|---|---:|---|---|---|---|
 | Document title | 黑体 | 28号 | single | 10 pt | 10 pt | bold |
-| Level 1 heading | 黑体 | 三号 | single | 10 pt | 10 pt | bold, use selected numbering mode |
+| Level 1 heading | 黑体 | 三号 | single | 10 pt | 10 pt | bold, use all-decimal heading numbering |
 | Level 2 heading | 黑体 | 小三 | single | 8 pt | 8 pt | bold |
 | Level 3 heading | 黑体 | 四号 | 1.5 lines | 0 | 0 | bold |
 | Level 4 heading | 黑体 | 小四 | 1.5 lines | 0 | 0 | bold |
@@ -157,7 +151,7 @@ When the user wants an actual `.docx` file in this repository, prefer the built-
 
 Use this workflow in two modes:
 - source `.md`, `.markdown`, or `.txt`: generate a new `.docx`
-- source `.docx`: refresh the existing document in place by normalizing cover, headings, body paragraphs, and table text without deleting and rebuilding the body
+- source `.docx`: read the existing document and write a refreshed copy by normalizing only the body-boundary-and-after region, while preserving existing document structure and honoring explicit cover / TOC decisions
 
 Before launching the local DOCX workflow through this skill, ask these questions in order:
 1. whether to generate a cover page
@@ -174,8 +168,9 @@ Apply the user's answers directly:
 Use:
 
 ```bash
-python3 /Users/huangcn/github/document-format/skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc] [--numbering-mode A|B]
+python3 skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
 ```
+
 
 Apply this path when:
 - the user wants a final Word document, not just a style spec
@@ -190,18 +185,17 @@ Before running the local DOCX workflow, check:
 
 The script now performs these checks at startup and exits with a clear error if a required dependency is missing.
 
-This local script is the default implementation for this repository because it already applies the core formatting rules from this skill, including heading mapping, body formatting, table formatting, page setup, page numbers, first-line indent in Word character units, explicit left-indent clearing, basic cover recognition, and existing `.docx` in-place refresh.
+This local script is the default implementation for this repository because it already applies the core formatting rules from this skill, including heading mapping, body formatting, table formatting, page setup, page numbers, first-line indent in Word character units, explicit left-indent clearing, basic cover recognition, and existing `.docx` refreshed-copy normalization.
 It now creates the output document from a blank Word document and does not depend on a local template `.docx` file.
 
 Additional options:
 - `--reserve-cover`: when no explicit cover decision is provided and no cover is detected, insert a placeholder cover page
 - `--auto-toc`: when no explicit TOC decision is provided and no explicit TOC heading is detected, insert a generated Word TOC field page
 - `--with-cover`: always generate a cover page for this run and bypass automatic cover detection
-- `--without-cover`: never generate a cover page for this run and bypass automatic cover detection
+- `--without-cover`: never generate a cover page for this run and bypass automatic cover detection; for existing `.docx`, fully freeze any existing cover region and do not restyle it, reseat sections, rewrite footers, or change page numbering before the detected body boundary
 - `--cover-text <text>`: explicit cover text; the first non-empty line becomes the title and later non-empty lines become centered metadata; implies `--with-cover` when used alone
 - `--with-toc`: explicitly request generated TOC insertion for this run
-- `--without-toc`: explicitly suppress generated TOC insertion for this run
-- `--numbering-mode A|B`: choose Mode A (all-decimal hierarchy) or Mode B (Chinese top-level headings with decimal lower levels)
+- `--without-toc`: explicitly suppress generated TOC insertion for this run; for existing `.docx`, keep any TOC that already exists, and when the cover region is frozen do not let TOC handling modify content before the detected body boundary
 
 Compatibility behavior:
 - the new explicit cover / TOC options are the preferred path for skill-driven runs
@@ -221,14 +215,69 @@ TOC detection rules:
 
 TXT support note:
 - the script now includes a minimal TXT heading detector so TXT inputs can also participate in TOC generation
-- numeric headings such as `1`, `1.1`, `1.1.1` and Chinese top-level headings such as `一、` are recognized conservatively
+- numeric headings such as `1`, `1.1`, and `1.1.1` are recognized conservatively
+
+### XML debug lane
+
+When an existing `.docx` behaves unexpectedly in Word and the normal `python-docx` refresh path is not enough, use the local XML debug lane instead of guessing at higher-level API behavior.
+
+Use:
+
+```bash
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py repack <output-dir> <output.docx> --original <input.docx>
+```
+
+Use this lane when:
+- Word rendering differs from what `python-docx` or raw text inspection suggests
+- numbering, TOC, style bindings, or field behavior need direct XML inspection
+- you need schema validation before trusting a low-level `.docx` fix
+
+This is a debugging and repair lane, not the default generation path.
+
+#### When to recommend the XML debug lane
+
+Do not jump to XML editing by default. Prefer the normal workflow first, then recommend the XML debug lane only when one of these signals is present.
+
+**Level 1 — stay on the normal workflow**
+- ordinary style, spacing, indentation, cover, TOC decision, or table-formatting issues
+- first-pass heading mapping issues that can be explained and fixed through the current script workflow
+
+**Level 2 — recommend the XML debug lane**
+- verification fails around heading numbering chains, TOC/body consistency, field behavior, or section/page-break preservation
+- the generated document passes some checks, but visible Word output still disagrees with the expected result
+- an existing `.docx` needs refreshed-copy normalization and the issue appears tied to `numbering.xml`, `styles.xml`, `settings.xml`, or `document.xml.rels`
+
+**Level 3 — strongly recommend the XML debug lane**
+- the same rendering/compatibility problem survives more than one targeted fix in the normal workflow
+- Word rendering clearly disagrees with both XML inspection and non-Word renderers
+- structure preservation is at risk, such as disappearing images, tables, page breaks, sections, comments, or tracked changes
+
+#### Standard escalation messages
+
+When recommending the XML debug lane, say so explicitly and give the reason.
+
+Use wording like:
+- `This looks more like a DOCX XML structure or field-binding problem than a normal formatting issue. I recommend switching to the XML debug lane for unpack -> validate -> repack.`
+- `The script-level checks are not enough here because Word rendering still disagrees with the expected result. I recommend inspecting the unpacked DOCX XML directly.`
+- `This existing .docx appears to need low-level inspection of numbering, style bindings, relationships, or settings. I recommend using the local XML debug lane before making more high-level guesses.`
+
+When useful, immediately provide the next commands:
+
+```bash
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py unpack <input.docx> <output-dir>
+python3 skills/word-expert-formatting/scripts/debug_docx_xml.py validate <output-dir> --original <input.docx>
+```
 
 ### Existing DOCX refresh strategy
 
 For existing `.docx` inputs:
 - do not delete and rebuild the body from extracted plain text
 - preserve existing images, drawings, embedded objects, tables, page breaks, and section structure
-- normalize the document in place after the detected body boundary
+- normalize the document into a refreshed copy after the detected body boundary
+- when the user chooses not to generate or update the cover, fully freeze the existing cover region and allow no cover-region formatting, section, footer, or page-number changes
+- keep TOC handling behind the detected body boundary when the cover region is frozen
 - clear residual style-level and paragraph-level left indent before applying the standard body first-line indent
 - keep cover corner metadata left-aligned and unindented
 - treat a centered multi-line cover title block as one title block and enforce uniform title styling across every title line
@@ -295,8 +344,7 @@ By default, output a structured Markdown-style formatting result with explicit l
 Use labels like these:
 - `[封面标题]`
 - `[封面公司/日期]`
-- `[一级标题-模式A]`
-- `[一级标题-模式B]`
+- `[一级标题]`
 - `[二级标题]`
 - `[三级标题]`
 - `[四级标题]`
@@ -318,7 +366,7 @@ If the user explicitly asks for machine-readable output for `python-docx`, XML, 
 - `first_line_indent`
 - `alignment`
 - `heading_level`
-- `numbering_mode`
+- `heading_numbering`
 
 When producing structured data, preserve the same formatting rules as the default output.
 
@@ -366,7 +414,7 @@ After generating a `.docx`, verify the conversion result before reporting succes
 2. **Heading hierarchy**
    - inspect every heading level that is actually present in the document, with level 1 through level 3 as the minimum scope
    - when level 4, level 5, or deeper headings are present, include those levels in the same verification pass rather than stopping at level 3
-   - confirm numbering matches the selected numbering mode
+   - confirm numbering matches the default all-decimal heading hierarchy
    - confirm parent / child paths are consistent and no level was silently skipped or flattened
    - confirm no visible heading shows duplicated numbering caused by a manual prefix plus automatic numbering
 
@@ -434,11 +482,11 @@ When returning the result, include a brief verification summary that states:
 When formatting content, prefer this response shape:
 
 ```markdown
-【格式化执行完毕 - 已启用模式A 或 模式B】
+【格式化执行完毕】
 
 [封面标题] ...
 [封面公司/日期] ...
-[一级标题-模式A] ...
+[一级标题] ...
 [二级标题] ...
 [三级标题] ...
 [正文] ...
@@ -448,33 +496,7 @@ When formatting content, prefer this response shape:
 
 If some sections do not exist in the source, omit them.
 
-## Example: Mode B
-
-**Input idea:**
-“帮我用模式B格式化这段：公司介绍。1. 历史沿革。1.1 创立期。”
-
-**Output:**
-
-```markdown
-【格式化执行完毕 - 已启用模式 B】
-
-[一级标题-模式B] 一、公司介绍
-样式：宋体，四号，单倍行距，段前 10 pt，段后 10 pt
-
-[二级标题] 1.1 历史沿革
-样式：宋体，小四号，单倍行距，段前 8 pt，段后 8 pt
-
-[三级标题] 1.1.1 创立期
-样式：宋体，小四号，1.5 倍行距，段前 0，段后 0
-
-[正文] 正文内容……
-样式：宋体，小四号，1.5 倍行距，首行缩进 2 字符
-
-[页脚] 页码
-样式：宋体，五号，1.5 倍行距，居中
-```
-
-## Example: Mode A
+## Example
 
 **Input idea:**
 “把这份提纲整理成标准 Word 格式：项目背景、实施范围、上线计划。”
@@ -482,15 +504,15 @@ If some sections do not exist in the source, omit them.
 **Output pattern:**
 
 ```markdown
-【格式化执行完毕 - 已启用模式 A】
+【格式化执行完毕】
 
-[一级标题-模式A] 1 项目背景
+[一级标题] 1 项目背景
 样式：宋体，四号，单倍行距，段前 10 pt，段后 10 pt
 
-[一级标题-模式A] 2 实施范围
+[一级标题] 2 实施范围
 样式：宋体，四号，单倍行距，段前 10 pt，段后 10 pt
 
-[一级标题-模式A] 3 上线计划
+[一级标题] 3 上线计划
 样式：宋体，四号，单倍行距，段前 10 pt，段后 10 pt
 ```
 

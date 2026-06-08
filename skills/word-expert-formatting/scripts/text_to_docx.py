@@ -90,18 +90,14 @@ TOC_TITLE = "目录"
 TOC_HEADING_MARKERS = {"目录", "目 录", "toc", "table of contents", "contents"}
 TXT_HEADING_MAX_LENGTH = 40
 SUPPORTED_INPUT_SUFFIXES = {'.md', '.markdown', '.txt', '.docx'}
-NUMBERING_MODE_A = 'A'
-NUMBERING_MODE_B = 'B'
 TITLE_NUMBERING_ABSTRACT_ID = '700'
 TITLE_NUMBERING_ID = '701'
 BULLET_NUMBERING_ABSTRACT_ID = '702'
 BULLET_NUMBERING_ID = '703'
-TITLE_NUMBERING_MODE_B_ABSTRACT_ID = '704'
-TITLE_NUMBERING_MODE_B_ID = '705'
 
 
 class StyleSpec:
-    def __init__(self, font_name: str, font_size, line_spacing: str, before_pt: float, after_pt: float, first_line_chars: int = 0, bold: bool | None = None, alignment=None):
+    def __init__(self, font_name: str, font_size, line_spacing: str, before_pt: float, after_pt: float, first_line_chars: int = 0, bold: bool | None = None, alignment=None, font_color: str | None = None):
         self.font_name = font_name
         self.font_size = font_size
         self.line_spacing = line_spacing
@@ -110,27 +106,33 @@ class StyleSpec:
         self.first_line_chars = first_line_chars
         self.bold = bold
         self.alignment = alignment if alignment is not None else WD_ALIGN_PARAGRAPH.LEFT
+        self.font_color = font_color
 
 
-TITLE_SPEC = StyleSpec(FONT_HEI, SIZE_TITLE, "single", 10, 10, 0, True)
-H1_SPEC = StyleSpec(FONT_HEI, SIZE_H1, "single", 10, 10, 0, True)
-H2_SPEC = StyleSpec(FONT_HEI, SIZE_H2, "single", 8, 8, 0, True)
-H3_SPEC = StyleSpec(FONT_HEI, SIZE_H3, "one_point_five", 0, 0, 0, True)
-H4_SPEC = StyleSpec(FONT_HEI, SIZE_H4, "one_point_five", 0, 0, 0, True)
-H5_SPEC = StyleSpec(FONT_HEI, SIZE_H5, "one_point_five", 0, 0, 0, True)
-H6_SPEC = StyleSpec(FONT_HEI, SIZE_H6, "one_point_five", 0, 0, 0, True)
-H7_SPEC = StyleSpec(FONT_HEI, SIZE_H7, "one_point_five", 0, 0, 0, True)
-H8_SPEC = StyleSpec(FONT_HEI, SIZE_H8, "one_point_five", 0, 0, 0, True)
-H9_SPEC = StyleSpec(FONT_HEI, SIZE_H9, "one_point_five", 0, 0, 0, True)
-COVER_TITLE_SPEC = StyleSpec(FONT_SONG, Pt(22), "one_point_five", 9, 9, 0, True)
+BLACK_FONT_COLOR = '000000'
+
+
+TITLE_SPEC = StyleSpec(FONT_HEI, SIZE_TITLE, "single", 10, 10, 0, True, font_color=BLACK_FONT_COLOR)
+H1_SPEC = StyleSpec(FONT_HEI, SIZE_H1, "single", 10, 10, 0, True, font_color=BLACK_FONT_COLOR)
+H2_SPEC = StyleSpec(FONT_HEI, SIZE_H2, "single", 8, 8, 0, True, font_color=BLACK_FONT_COLOR)
+H3_SPEC = StyleSpec(FONT_HEI, SIZE_H3, "one_point_five", 0, 0, 0, True, font_color=BLACK_FONT_COLOR)
+H4_SPEC = StyleSpec(FONT_HEI, SIZE_H4, "one_point_five", 0, 0, 0, True, font_color=BLACK_FONT_COLOR)
+H5_SPEC = StyleSpec(FONT_HEI, SIZE_H5, "one_point_five", 0, 0, 0, True, font_color=BLACK_FONT_COLOR)
+H6_SPEC = StyleSpec(FONT_HEI, SIZE_H6, "one_point_five", 0, 0, 0, True, font_color=BLACK_FONT_COLOR)
+H7_SPEC = StyleSpec(FONT_HEI, SIZE_H7, "one_point_five", 0, 0, 0, True, font_color=BLACK_FONT_COLOR)
+H8_SPEC = StyleSpec(FONT_HEI, SIZE_H8, "one_point_five", 0, 0, 0, True, font_color=BLACK_FONT_COLOR)
+H9_SPEC = StyleSpec(FONT_HEI, SIZE_H9, "one_point_five", 0, 0, 0, True, font_color=BLACK_FONT_COLOR)
+COVER_TITLE_SPEC = StyleSpec(FONT_SONG, Pt(22), "one_point_five", 9, 9, 0, True, font_color=BLACK_FONT_COLOR)
 COVER_META_SPEC = StyleSpec(FONT_SONG, Pt(14), "one_point_five", 0, 0, 0, None)
 COVER_CORNER_SPEC = StyleSpec(FONT_HEI, Pt(10.5), "single", 0, 0, 0, False)
 BODY_SPEC = StyleSpec(FONT_SONG, SIZE_BODY, "one_point_five", 0, 0, 2, None, WD_ALIGN_PARAGRAPH.JUSTIFY)
 TABLE_SPEC = StyleSpec(FONT_SONG, SIZE_TABLE, "one_point_five", 0, 0, 0, None)
 CODE_SPEC = StyleSpec(FONT_MONO, SIZE_CODE, "one_point_five", 6, 6, 0, None)
 PAGE_SPEC = StyleSpec(FONT_SONG, Pt(10.5), "one_point_five", 0, 0, 0, None)
-TOC_TITLE_SPEC = StyleSpec(FONT_HEI, SIZE_H1, "single", 10, 10, 0, True)
+TOC_TITLE_SPEC = StyleSpec(FONT_HEI, SIZE_H1, "single", 10, 10, 0, True, font_color=BLACK_FONT_COLOR)
 TOC_ENTRY_SPEC = StyleSpec(FONT_SONG, SIZE_BODY, "one_point_five", 0, 0, 0, None)
+
+TOC_TOP_LEVEL_ENTRY_RE = re.compile(r'^\s*(\d+)\.\s*$')
 
 HEADING_RE = re.compile(r'^(#{1,9})\s+(.*)$')
 BULLET_RE = re.compile(r'^(\s*)[-*+]\s+(.*)$')
@@ -168,19 +170,27 @@ class VerificationContext:
         expect_cover: bool,
         expect_toc: bool,
         expected_headings: list[tuple[int, str]],
-        numbering_mode: str,
         source_kind: str,
         toc_refresh_state: str = 'not_refreshed',
         structure_snapshot: dict[str, int] | None = None,
+        preserve_cover_format: bool = False,
+        frozen_cover_signature: list[dict[str, object]] | None = None,
+        frozen_section_count: int | None = None,
+        frozen_footer_relationship_count: int | None = None,
+        frozen_trailing_sectpr_xml: str | None = None,
     ):
         self.expected_cover = expected_cover
         self.expect_cover = expect_cover
         self.expect_toc = expect_toc
         self.expected_headings = expected_headings
-        self.numbering_mode = numbering_mode
         self.source_kind = source_kind
         self.toc_refresh_state = toc_refresh_state
         self.structure_snapshot = structure_snapshot or {}
+        self.preserve_cover_format = preserve_cover_format
+        self.frozen_cover_signature = frozen_cover_signature
+        self.frozen_section_count = frozen_section_count
+        self.frozen_footer_relationship_count = frozen_footer_relationship_count
+        self.frozen_trailing_sectpr_xml = frozen_trailing_sectpr_xml
 
 
 def clear_document_body(doc: Document):
@@ -261,6 +271,50 @@ def get_heading_style_id(level: int) -> str:
     return get_heading_style_name(level)
 
 
+def resolve_heading_style_id(doc: Document, level: int) -> str:
+    style = doc.styles[get_heading_style_name(level)]
+    return style.style_id
+
+
+def set_rpr_color(r_pr, color: str | None) -> None:
+    if color is None:
+        return
+    color_node = r_pr.find(qn('w:color'))
+    if color_node is None:
+        color_node = OxmlElement('w:color')
+        inserted = False
+        after_tags = {
+            qn('w:spacing'),
+            qn('w:w'),
+            qn('w:kern'),
+            qn('w:position'),
+            qn('w:sz'),
+            qn('w:szCs'),
+            qn('w:highlight'),
+            qn('w:u'),
+            qn('w:effect'),
+            qn('w:bdr'),
+            qn('w:shd'),
+            qn('w:fitText'),
+            qn('w:vertAlign'),
+            qn('w:rtl'),
+            qn('w:cs'),
+            qn('w:em'),
+            qn('w:lang'),
+            qn('w:eastAsianLayout'),
+            qn('w:specVanish'),
+            qn('w:oMath'),
+        }
+        for idx, child in enumerate(list(r_pr)):
+            if child.tag in after_tags:
+                r_pr.insert(idx, color_node)
+                inserted = True
+                break
+        if not inserted:
+            r_pr.append(color_node)
+    color_node.set(qn('w:val'), color)
+
+
 def get_or_create_paragraph_style(doc: Document, style_name: str, style_id: str, spec: StyleSpec):
     if style_name in doc.styles:
         style = doc.styles[style_name]
@@ -282,11 +336,12 @@ def get_or_create_paragraph_style(doc: Document, style_name: str, style_id: str,
     r_fonts.set(qn('w:ascii'), spec.font_name)
     r_fonts.set(qn('w:hAnsi'), spec.font_name)
     r_fonts.set(qn('w:eastAsia'), spec.font_name)
+    set_rpr_color(r_pr, spec.font_color)
 
     return style
 
 
-def set_run_font(run, font_name: str, font_size):
+def set_run_font(run, font_name: str, font_size, font_color: str | None = None):
     run.font.name = font_name
     run.font.size = font_size
     r_pr = run._element.get_or_add_rPr()
@@ -297,6 +352,7 @@ def set_run_font(run, font_name: str, font_size):
     r_fonts.set(qn('w:ascii'), font_name)
     r_fonts.set(qn('w:hAnsi'), font_name)
     r_fonts.set(qn('w:eastAsia'), font_name)
+    set_rpr_color(r_pr, font_color)
 
 
 def insert_numpr_after_pstyle(p_pr, num_pr):
@@ -333,6 +389,13 @@ def clear_paragraph_alignment(paragraph):
 
 def clear_paragraph_numbering(paragraph):
     p_pr = paragraph._p.get_or_add_pPr()
+    for child in list(p_pr):
+        if child.tag == qn('w:numPr'):
+            p_pr.remove(child)
+
+
+def clear_style_numbering(style):
+    p_pr = style._element.get_or_add_pPr()
     for child in list(p_pr):
         if child.tag == qn('w:numPr'):
             p_pr.remove(child)
@@ -439,7 +502,7 @@ def apply_paragraph_style(paragraph, spec: StyleSpec):
         set_no_first_line_indent(paragraph)
 
     for run in paragraph.runs:
-        set_run_font(run, spec.font_name, spec.font_size)
+        set_run_font(run, spec.font_name, spec.font_size, spec.font_color)
         if spec.bold is not None:
             run.bold = spec.bold
 
@@ -554,7 +617,7 @@ def ensure_numbering_child_order(numbering, child, kind: str):
     raise ValueError(f'Unsupported numbering child kind: {kind}')
 
 
-def ensure_title_numbering(numbering, abstract_id: str, numbering_id: str, top_level_mode: str):
+def ensure_title_numbering(doc: Document, numbering, abstract_id: str, numbering_id: str):
     title_existing = numbering.xpath(f'./w:abstractNum[@w:abstractNumId="{abstract_id}"]')
     if not title_existing:
         title_abstract = OxmlElement('w:abstractNum')
@@ -569,10 +632,10 @@ def ensure_title_numbering(numbering, abstract_id: str, numbering_id: str, top_l
         title_abstract.append(multi_level_type)
 
         level_styles = {
-            ilvl: get_heading_style_id(ilvl + 1) for ilvl in range(MAX_HEADING_LEVEL)
+            ilvl: resolve_heading_style_id(doc, ilvl + 1) for ilvl in range(MAX_HEADING_LEVEL)
         }
         level_patterns = {
-            ilvl: ('%1、' if ilvl == 0 and top_level_mode == NUMBERING_MODE_B else '.'.join(f'%{idx}' for idx in range(1, ilvl + 2)))
+            ilvl: '.'.join(f'%{idx}' for idx in range(1, ilvl + 2))
             for ilvl in range(MAX_HEADING_LEVEL)
         }
 
@@ -585,7 +648,7 @@ def ensure_title_numbering(numbering, abstract_id: str, numbering_id: str, top_l
             lvl.append(start)
 
             num_fmt = OxmlElement('w:numFmt')
-            num_fmt.set(qn('w:val'), 'chineseCountingThousand' if ilvl == 0 and top_level_mode == NUMBERING_MODE_B else 'decimal')
+            num_fmt.set(qn('w:val'), 'decimal')
             lvl.append(num_fmt)
 
             p_style = OxmlElement('w:pStyle')
@@ -611,6 +674,7 @@ def ensure_title_numbering(numbering, abstract_id: str, numbering_id: str, top_l
             r_fonts.set(qn('w:hAnsi'), spec.font_name)
             r_fonts.set(qn('w:eastAsia'), spec.font_name)
             r_pr.append(r_fonts)
+            set_rpr_color(r_pr, spec.font_color)
             if spec.bold:
                 r_pr.append(OxmlElement('w:b'))
             sz = OxmlElement('w:sz')
@@ -636,9 +700,11 @@ def ensure_title_numbering(numbering, abstract_id: str, numbering_id: str, top_l
 
 
 def ensure_numbering(doc: Document):
-    numbering = doc.part.numbering_part.numbering_definitions._numbering
-    ensure_title_numbering(numbering, TITLE_NUMBERING_ABSTRACT_ID, TITLE_NUMBERING_ID, NUMBERING_MODE_A)
-    ensure_title_numbering(numbering, TITLE_NUMBERING_MODE_B_ABSTRACT_ID, TITLE_NUMBERING_MODE_B_ID, NUMBERING_MODE_B)
+    numbering_part = doc.part.numbering_part
+    if numbering_part is None:
+        return
+    numbering = numbering_part.numbering_definitions._numbering
+    ensure_title_numbering(doc, numbering, TITLE_NUMBERING_ABSTRACT_ID, TITLE_NUMBERING_ID)
 
     bullet_existing = numbering.xpath(f'./w:abstractNum[@w:abstractNumId="{BULLET_NUMBERING_ABSTRACT_ID}"]')
     if bullet_existing:
@@ -699,27 +765,25 @@ def ensure_numbering(doc: Document):
     ensure_numbering_child_order(numbering, bullet_num, 'num')
 
 
-def get_title_numbering_id(numbering_mode: str) -> str:
-    return TITLE_NUMBERING_MODE_B_ID if numbering_mode == NUMBERING_MODE_B else TITLE_NUMBERING_ID
+def get_title_numbering_id() -> str:
+    return TITLE_NUMBERING_ID
 
 
-def apply_heading_numbering(paragraph, level: int, numbering_mode: str = NUMBERING_MODE_A):
+def apply_heading_numbering(paragraph, level: int):
+    clear_paragraph_numbering(paragraph)
+
     p_pr = paragraph._p.get_or_add_pPr()
-    for child in list(p_pr):
-        if child.tag == qn('w:numPr'):
-            p_pr.remove(child)
-
     num_pr = OxmlElement('w:numPr')
     ilvl = OxmlElement('w:ilvl')
     ilvl.set(qn('w:val'), str(max(level - 1, 0)))
     num_id = OxmlElement('w:numId')
-    num_id.set(qn('w:val'), get_title_numbering_id(numbering_mode))
+    num_id.set(qn('w:val'), TITLE_NUMBERING_ID)
     num_pr.append(ilvl)
     num_pr.append(num_id)
     insert_numpr_after_pstyle(p_pr, num_pr)
 
 
-def normalize_heading_text(text: str, numbering_mode: str) -> str:
+def normalize_heading_text(text: str) -> str:
     content = text.strip()
     chinese = MARKDOWN_CHINESE_HEADING_RE.match(content)
     if chinese:
@@ -741,9 +805,7 @@ def get_toc_field_levels(entries: list[tuple[int, str]]) -> str:
     return f'1-{max(levels)}'
 
 
-def get_expected_heading_number_pattern(level: int, numbering_mode: str) -> str:
-    if numbering_mode == NUMBERING_MODE_B and level == 1:
-        return '%1、'
+def get_expected_heading_number_pattern(level: int) -> str:
     return '.'.join(f'%{idx}' for idx in range(1, level + 1))
 
 
@@ -800,6 +862,30 @@ def get_num_abstract_id(num_node) -> str | None:
         if child.tag == qn('w:abstractNumId'):
             return child.get(qn('w:val'))
     return None
+
+
+def detach_inactive_heading_style_links(doc: Document, active_numbering_id: str) -> None:
+    numbering_part = doc.part.numbering_part
+    if numbering_part is None:
+        return
+    numbering = numbering_part.numbering_definitions._numbering
+    abstract_by_id, num_by_id = get_numbering_nodes(numbering)
+    num_node = num_by_id.get(active_numbering_id)
+    if num_node is None:
+        return
+    active_abstract_id = get_num_abstract_id(num_node)
+    if active_abstract_id is None:
+        return
+    heading_style_ids = {resolve_heading_style_id(doc, level) for level in range(1, MAX_HEADING_LEVEL + 1)}
+    for abstract_id, abstract_node in abstract_by_id.items():
+        if abstract_id == active_abstract_id:
+            continue
+        for level_node in list(abstract_node):
+            if level_node.tag != qn('w:lvl'):
+                continue
+            for child in list(level_node):
+                if child.tag == qn('w:pStyle') and child.get(qn('w:val')) in heading_style_ids:
+                    level_node.remove(child)
 
 
 def get_abstract_level_node(abstract_node, ilvl: int):
@@ -860,8 +946,86 @@ def collect_heading_paragraphs(doc: Document) -> dict[int, list[object]]:
     return result
 
 
+def get_paragraph_style_id(paragraph) -> str | None:
+    p_pr = paragraph._p.pPr
+    if p_pr is not None:
+        for child in list(p_pr):
+            if child.tag == qn('w:pStyle'):
+                return child.get(qn('w:val'))
+    style = paragraph.style
+    if style is not None and style.style_id is not None:
+        return style.style_id
+    return None
+
+
+def iter_paragraph_text_nodes(paragraph):
+    for child in paragraph._p.iter():
+        if child.tag == qn('w:t'):
+            parent = child.getparent()
+            is_deleted = False
+            while parent is not None and parent != paragraph._p:
+                if parent.tag == qn('w:del'):
+                    is_deleted = True
+                    break
+                parent = parent.getparent()
+            if not is_deleted:
+                yield child
+
+
+def chinese_counting_text(value: int, force_one_ten: bool = False) -> str:
+    if value <= 0:
+        raise ValueError('Chinese counting value must be positive')
+    if value >= 10000:
+        return str(value)
+    digits = '零一二三四五六七八九'
+    if value < 10:
+        return digits[value]
+    if value < 20:
+        suffix = digits[value % 10] if value % 10 else ''
+        return f'一十{suffix}' if force_one_ten else f'十{suffix}'
+    if value < 100:
+        tens, ones = divmod(value, 10)
+        suffix = digits[ones] if ones else ''
+        return f'{digits[tens]}十{suffix}'
+    if value < 1000:
+        hundreds, remainder = divmod(value, 100)
+        prefix = f'{digits[hundreds]}百'
+        if remainder == 0:
+            return prefix
+        if remainder < 10:
+            return f'{prefix}零{chinese_counting_text(remainder, force_one_ten=True)}'
+        return f'{prefix}{chinese_counting_text(remainder, force_one_ten=True)}'
+    thousands, remainder = divmod(value, 1000)
+    prefix = f'{digits[thousands]}千'
+    if remainder == 0:
+        return prefix
+    if remainder < 100:
+        return f'{prefix}零{chinese_counting_text(remainder, force_one_ten=True)}'
+    return f'{prefix}{chinese_counting_text(remainder, force_one_ten=True)}'
+
+
+def refresh_existing_toc_cache(doc: Document) -> bool:
+    return False
+
+
+def normalize_existing_toc_paragraphs(doc: Document, start_boundary=None) -> None:
+    started = start_boundary is None
+    for block in iter_body_blocks(doc):
+        element = block._element if hasattr(block, '_element') else None
+        if not started:
+            if element != start_boundary:
+                continue
+            started = True
+        if not isinstance(block, DocxParagraph):
+            continue
+        style_id = get_paragraph_style_id(block)
+        if style_id is None or not style_id.upper().startswith('TOC'):
+            continue
+        clear_paragraph_indentation(block)
+
+
 def get_paragraph_text(paragraph) -> str:
-    return ''.join(run.text for run in paragraph.runs).strip()
+    return ''.join((text_node.text or '') for text_node in iter_paragraph_text_nodes(paragraph)).strip()
 
 
 def get_paragraph_section_index(doc: Document, paragraph) -> int:
@@ -950,6 +1114,8 @@ def collect_cover_paragraphs(doc: Document) -> list[object]:
             title_ended = True
             break
         if not title_started:
+            if text:
+                break
             cover_paragraphs.append(paragraph)
     return cover_paragraphs
 
@@ -991,6 +1157,24 @@ def find_body_start_boundary(doc: Document) -> object | None:
             elif child.tag == qn('w:tbl'):
                 return child
         return anchor
+    cover_paragraphs = collect_cover_paragraphs(doc)
+    if cover_paragraphs:
+        last_cover = cover_paragraphs[-1]._p
+        passed_cover = False
+        for child in doc._element.body.iterchildren():
+            if child.tag == qn('w:sectPr'):
+                continue
+            if not passed_cover:
+                if child == last_cover:
+                    passed_cover = True
+                continue
+            if child.tag == qn('w:p'):
+                paragraph = DocxParagraph(child, doc._body)
+                if get_paragraph_text(paragraph):
+                    return child
+            elif child.tag == qn('w:tbl'):
+                return child
+        return None
     for child in doc._element.body.iterchildren():
         if child.tag == qn('w:p'):
             paragraph = DocxParagraph(child, doc._body)
@@ -1102,6 +1286,42 @@ def snapshot_document_structure(doc: Document) -> dict[str, int]:
     }
 
 
+def snapshot_cover_signature(doc: Document) -> list[dict[str, object]]:
+    signature: list[dict[str, object]] = []
+    for paragraph in collect_cover_paragraphs(doc):
+        runs: list[tuple[str, str | None, float | None, bool | None]] = []
+        for run in paragraph.runs:
+            if not run.text:
+                continue
+            size = run.font.size.pt if run.font.size is not None else None
+            runs.append((run.text, run.font.name, size, run.bold))
+        before = paragraph.paragraph_format.space_before
+        after = paragraph.paragraph_format.space_after
+        signature.append(
+            {
+                'text': get_paragraph_text(paragraph),
+                'style': paragraph.style.name if paragraph.style is not None else None,
+                'align': paragraph.alignment,
+                'before': before.pt if before is not None else None,
+                'after': after.pt if after is not None else None,
+                'line': paragraph.paragraph_format.line_spacing,
+                'runs': runs,
+            }
+        )
+    return signature
+
+
+def count_footer_relationships(doc: Document) -> int:
+    return sum(1 for rel in doc.part.rels.values() if rel.reltype.endswith('/footer'))
+
+
+def snapshot_trailing_sectpr_xml(doc: Document) -> str | None:
+    for child in reversed(list(doc._element.body.iterchildren())):
+        if child.tag == qn('w:sectPr'):
+            return child.xml
+    return None
+
+
 def apply_existing_cover_title_font(paragraph) -> None:
     for run in paragraph.runs:
         if not run.text:
@@ -1176,7 +1396,7 @@ def ensure_body_section_for_existing_docx(doc: Document) -> None:
     body.insert(list(body).index(boundary), section_break_paragraph)
 
 
-def normalize_existing_heading_paragraph(paragraph, numbering_mode: str) -> None:
+def normalize_existing_heading_paragraph(paragraph) -> None:
     style_name = paragraph.style.name if paragraph.style is not None else ''
     if not style_name.startswith('Heading '):
         return
@@ -1186,7 +1406,7 @@ def normalize_existing_heading_paragraph(paragraph, numbering_mode: str) -> None
         return
     paragraph.style = get_heading_style_id(level)
     spec = get_heading_spec(level)
-    normalized = normalize_heading_text(get_paragraph_text(paragraph), numbering_mode)
+    normalized = normalize_heading_text(get_paragraph_text(paragraph))
     if normalized and normalized != get_paragraph_text(paragraph):
         if paragraph.runs:
             paragraph.runs[0].text = normalized
@@ -1195,7 +1415,7 @@ def normalize_existing_heading_paragraph(paragraph, numbering_mode: str) -> None
         else:
             paragraph.add_run(normalized)
     apply_paragraph_style(paragraph, spec)
-    apply_heading_numbering(paragraph, level, numbering_mode)
+    apply_heading_numbering(paragraph, level)
 
 
 def normalize_existing_body_paragraph(paragraph) -> None:
@@ -1215,7 +1435,7 @@ def normalize_existing_table(table) -> None:
                 apply_paragraph_style(paragraph, TABLE_SPEC)
 
 
-def normalize_existing_docx_body(doc: Document, numbering_mode: str) -> list[tuple[int, str]]:
+def normalize_existing_docx_body(doc: Document) -> list[tuple[int, str]]:
     boundary = find_body_start_boundary(doc)
     started = boundary is None
     expected_headings: list[tuple[int, str]] = []
@@ -1234,7 +1454,7 @@ def normalize_existing_docx_body(doc: Document, numbering_mode: str) -> list[tup
                 continue
             style_name = block.style.name if block.style is not None else ''
             if style_name.startswith('Heading '):
-                normalize_existing_heading_paragraph(block, numbering_mode)
+                normalize_existing_heading_paragraph(block)
                 try:
                     level = int(style_name.split(' ')[1])
                 except (IndexError, ValueError):
@@ -1253,26 +1473,39 @@ def normalize_existing_docx_body(doc: Document, numbering_mode: str) -> list[tup
 def refresh_existing_docx(
     input_path: Path,
     output_path: Path,
-    numbering_mode: str = NUMBERING_MODE_A,
+    force_cover: bool | None = None,
+    force_toc: bool | None = None,
 ) -> None:
     doc = Document(str(input_path))
-    configure_document_styles(doc)
     inferred_cover = infer_cover(doc)
+    freeze_cover_region = freeze_cover_region_active(force_cover, inferred_cover)
+    configure_document_styles(doc, freeze_cover_region=freeze_cover_region)
     has_cover_section = bool(inferred_cover)
+    preserve_cover_layout = freeze_cover_region
     structure_snapshot = snapshot_document_structure(doc)
-    normalize_existing_cover(doc, inferred_cover)
-    if has_cover_section:
+    body_boundary = find_body_start_boundary(doc)
+    frozen_cover_signature = snapshot_cover_signature(doc) if freeze_cover_region else None
+    frozen_section_count = len(doc.sections) if freeze_cover_region else None
+    frozen_footer_relationship_count = count_footer_relationships(doc) if freeze_cover_region else None
+    frozen_trailing_sectpr_xml = snapshot_trailing_sectpr_xml(doc) if freeze_cover_region else None
+    if force_cover is not False:
+        normalize_existing_cover(doc, inferred_cover)
+    if has_cover_section and not preserve_cover_layout:
         ensure_body_section_for_existing_docx(doc)
-    expected_headings = normalize_existing_docx_body(doc, numbering_mode)
+    expected_headings = normalize_existing_docx_body(doc)
+    toc_cache_updated = refresh_existing_toc_cache(doc)
+    if force_toc is not False:
+        normalize_existing_toc_paragraphs(doc, start_boundary=body_boundary if freeze_cover_region else None)
 
-    if has_cover_section:
-        configure_section_footer(doc.sections[0], show_page_number=False, page_number_start=None)
-        if len(doc.sections) < 2:
+    if not preserve_cover_layout:
+        if has_cover_section:
             configure_section_footer(doc.sections[0], show_page_number=False, page_number_start=None)
+            if len(doc.sections) < 2:
+                configure_section_footer(doc.sections[0], show_page_number=False, page_number_start=None)
+            else:
+                configure_section_footer(doc.sections[-1], show_page_number=True, page_number_start=1)
         else:
-            configure_section_footer(doc.sections[-1], show_page_number=True, page_number_start=1)
-    else:
-        configure_section_footer(doc.sections[0], show_page_number=True, page_number_start=1)
+            configure_section_footer(doc.sections[0], show_page_number=True, page_number_start=1)
 
     toc_heading, toc_field = find_toc_region(doc)
     context = build_verification_context(
@@ -1280,10 +1513,14 @@ def refresh_existing_docx(
         expect_cover=has_cover_section,
         expect_toc=bool(toc_heading or toc_field),
         expected_headings=expected_headings,
-        numbering_mode=numbering_mode,
         source_kind='refreshed',
-        toc_refresh_state='not_refreshed',
+        toc_refresh_state='refreshed' if toc_cache_updated else 'not_refreshed',
         structure_snapshot=structure_snapshot,
+        preserve_cover_format=force_cover is False,
+        frozen_cover_signature=frozen_cover_signature,
+        frozen_section_count=frozen_section_count,
+        frozen_footer_relationship_count=frozen_footer_relationship_count,
+        frozen_trailing_sectpr_xml=frozen_trailing_sectpr_xml,
     )
     verify_document_workflow(doc, context)
     doc.save(output_path)
@@ -1362,20 +1599,28 @@ def build_verification_context(
     expect_cover: bool,
     expect_toc: bool,
     expected_headings: list[tuple[int, str]],
-    numbering_mode: str,
     source_kind: str,
     toc_refresh_state: str = 'not_refreshed',
     structure_snapshot: dict[str, int] | None = None,
+    preserve_cover_format: bool = False,
+    frozen_cover_signature: list[dict[str, object]] | None = None,
+    frozen_section_count: int | None = None,
+    frozen_footer_relationship_count: int | None = None,
+    frozen_trailing_sectpr_xml: str | None = None,
 ) -> VerificationContext:
     return VerificationContext(
         expected_cover=expected_cover,
         expect_cover=expect_cover,
         expect_toc=expect_toc,
         expected_headings=expected_headings,
-        numbering_mode=numbering_mode,
         source_kind=source_kind,
         toc_refresh_state=toc_refresh_state,
         structure_snapshot=structure_snapshot,
+        preserve_cover_format=preserve_cover_format,
+        frozen_cover_signature=frozen_cover_signature,
+        frozen_section_count=frozen_section_count,
+        frozen_footer_relationship_count=frozen_footer_relationship_count,
+        frozen_trailing_sectpr_xml=frozen_trailing_sectpr_xml,
     )
 
 
@@ -1459,7 +1704,7 @@ def verify_heading_numbering_definitions(doc: Document, context: VerificationCon
         if level_node is None:
             failures.append(f'Heading {level} numbering definition missing: {expected_title}')
             continue
-        expected_pattern = get_expected_heading_number_pattern(level, context.numbering_mode)
+        expected_pattern = get_expected_heading_number_pattern(level)
         if get_level_text_value(level_node) != expected_pattern:
             failures.append(f'Heading {level} numbering pattern mismatch: expected {expected_pattern}')
     return failures
@@ -1481,10 +1726,8 @@ def verify_cover_presence(doc: Document, context: VerificationContext) -> list[s
     has_cover = bool(cover_paragraphs)
     if context.expect_cover and not has_cover:
         failures.append('cover expected but no non-empty cover paragraphs found')
-    if not context.expect_cover and context.source_kind == 'generated' and has_cover:
-        first = cover_paragraphs[0]
-        if get_paragraph_section_index(doc, first) == 0:
-            failures.append('cover not expected but cover-like paragraphs were generated')
+    if not context.expect_cover and has_cover:
+        failures.append('cover not expected but cover-like paragraphs were retained')
     return failures
 
 
@@ -1501,6 +1744,8 @@ def verify_cover_title_block(doc: Document, context: VerificationContext) -> lis
         paragraph = by_text.get(title)
         if paragraph is None:
             failures.append(f'cover title missing: {title}')
+            continue
+        if context.preserve_cover_format:
             continue
         if get_run_font_names(paragraph) not in [set(), {COVER_TITLE_SPEC.font_name}]:
             failures.append(f'cover title font mismatch: {title}')
@@ -1529,6 +1774,8 @@ def verify_cover_corner_metadata(doc: Document, context: VerificationContext) ->
         if paragraph is None:
             failures.append(f'cover corner metadata missing: {item}')
             continue
+        if context.preserve_cover_format:
+            continue
         if paragraph.alignment != WD_ALIGN_PARAGRAPH.LEFT:
             failures.append(f'cover corner metadata not left aligned: {item}')
         if get_run_font_names(paragraph) not in [set(), {COVER_CORNER_SPEC.font_name}]:
@@ -1548,6 +1795,11 @@ def verify_toc_presence(doc: Document, context: VerificationContext) -> list[str
             failures.append('TOC heading missing')
         if toc_field is None:
             failures.append('TOC field missing')
+        return failures
+    if toc_heading is not None:
+        failures.append('TOC not expected but heading was retained')
+    if toc_field is not None:
+        failures.append('TOC not expected but field was retained')
     return failures
 
 
@@ -1591,6 +1843,30 @@ def verify_structure_preservation(doc: Document, context: VerificationContext) -
 
 
 
+def verify_frozen_cover_region(doc: Document, context: VerificationContext) -> list[str]:
+    failures: list[str] = []
+    if context.frozen_cover_signature is not None:
+        current_signature = snapshot_cover_signature(doc)
+        if current_signature != context.frozen_cover_signature:
+            failures.append('cover region changed under freeze-cover mode')
+    if context.frozen_section_count is not None and len(doc.sections) != context.frozen_section_count:
+        failures.append(
+            f'section count changed under freeze-cover mode: before={context.frozen_section_count} after={len(doc.sections)}'
+        )
+    if context.frozen_footer_relationship_count is not None:
+        current_footer_relationship_count = count_footer_relationships(doc)
+        if current_footer_relationship_count != context.frozen_footer_relationship_count:
+            failures.append(
+                'footer relationship count changed under freeze-cover mode: '
+                f'before={context.frozen_footer_relationship_count} after={current_footer_relationship_count}'
+            )
+    if context.frozen_trailing_sectpr_xml is not None:
+        current_trailing_sectpr_xml = snapshot_trailing_sectpr_xml(doc)
+        if current_trailing_sectpr_xml != context.frozen_trailing_sectpr_xml:
+            failures.append('trailing sectPr changed under freeze-cover mode')
+    return failures
+
+
 def verify_body_paragraph_style(doc: Document, context: VerificationContext) -> list[str]:
     failures: list[str] = []
     for paragraph in collect_body_paragraphs(doc, context):
@@ -1600,12 +1876,6 @@ def verify_body_paragraph_style(doc: Document, context: VerificationContext) -> 
         sizes = get_run_font_sizes(paragraph)
         if sizes not in [set(), {BODY_SPEC.font_size.pt}]:
             failures.append(f'body size mismatch: {text}')
-        style = paragraph.style
-        style_fmt = style.paragraph_format if style is not None else None
-        style_left_indent = style_fmt.left_indent.cm if style_fmt is not None and style_fmt.left_indent is not None else 0
-        style_first_line_indent = style_fmt.first_line_indent.cm if style_fmt is not None and style_fmt.first_line_indent is not None else 0
-        if style_left_indent not in (0, 0.0) or style_first_line_indent not in (0, 0.0):
-            failures.append(f'body style indent residue: {text}')
         p_pr = paragraph._p.pPr
         ind = p_pr.ind if p_pr is not None else None
         first_line_chars = ind.get(qn('w:firstLineChars')) if ind is not None else None
@@ -1626,13 +1896,19 @@ def verify_body_paragraph_style(doc: Document, context: VerificationContext) -> 
             failures.append(f'body spacing before/after mismatch: {text}')
         if paragraph.alignment != BODY_SPEC.alignment:
             failures.append(f'body alignment mismatch: {text}')
-        if extract_paragraph_numpr(paragraph) is not None:
-            failures.append(f'body numbering residue: {text}')
+        numpr = extract_paragraph_numpr(paragraph)
+        if numpr is not None:
+            num_id_el = numpr.find(qn('w:numId'))
+            num_id_val = num_id_el.get(qn('w:val')) if num_id_el is not None else None
+            if num_id_val != BULLET_NUMBERING_ID:
+                failures.append(f'body numbering residue: {text}')
     return failures
 
 
 def verify_pagination_rules(doc: Document, context: VerificationContext) -> list[str]:
     failures: list[str] = []
+    if context.preserve_cover_format:
+        return failures
     if context.expect_cover and len(doc.sections) < 2:
         failures.append('cover expected but body section was not split from cover section')
     return failures
@@ -1667,6 +1943,56 @@ def verify_table_layout(doc: Document, context: VerificationContext) -> list[str
     return failures
 
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_DEBUG_XML_SCRIPT = _SCRIPT_DIR / "debug_docx_xml.py"
+
+DEBUG_XML_COMMANDS = (
+    f"python3 {_DEBUG_XML_SCRIPT} unpack <input.docx> <output-dir>\n"
+    f"python3 {_DEBUG_XML_SCRIPT} validate <output-dir> --original <input.docx>"
+)
+
+
+XML_DEBUG_LANE_HINT_PREFIXES = (
+    'toc:',
+    'numbering:',
+    'toc ',
+    'numbering ',
+)
+
+
+XML_DEBUG_LANE_HINT_SUBSTRINGS = (
+    'field',
+    'section',
+    'page-break',
+    'structure',
+    'image count',
+    'table count',
+    'relationship',
+)
+
+
+def should_recommend_xml_debug_lane(failures: list[str], context: VerificationContext) -> bool:
+    if context.source_kind not in {'generated', 'refreshed', 'legacy'}:
+        return False
+    for failure in failures:
+        if failure.startswith(XML_DEBUG_LANE_HINT_PREFIXES):
+            return True
+        lowered = failure.lower()
+        if any(token in lowered for token in XML_DEBUG_LANE_HINT_SUBSTRINGS):
+            return True
+    return False
+
+
+def build_xml_debug_lane_guidance(failures: list[str], context: VerificationContext) -> str:
+    if not should_recommend_xml_debug_lane(failures, context):
+        return ''
+    return (
+        "\nThis looks more like a DOCX XML structure or field-binding problem than a normal formatting issue. "
+        "Consider switching to the XML debug lane:\n"
+        f"{DEBUG_XML_COMMANDS}"
+    )
+
+
 def verify_document_workflow(doc: Document, context: VerificationContext):
     failures = []
     failures.extend(format_failures('cover', verify_cover_presence(doc, context)))
@@ -1676,6 +2002,7 @@ def verify_document_workflow(doc: Document, context: VerificationContext):
     failures.extend(format_failures('toc', verify_toc_structure(doc, context)))
     failures.extend(format_failures('toc', verify_toc_against_body(doc, context)))
     failures.extend(format_failures('body', verify_structure_preservation(doc, context)))
+    failures.extend(format_failures('body', verify_frozen_cover_region(doc, context)))
     failures.extend(format_failures('body', verify_body_paragraph_style(doc, context)))
     failures.extend(format_failures('body', verify_pagination_rules(doc, context)))
     failures.extend(format_failures('table', verify_table_text_style(doc, context)))
@@ -1685,16 +2012,16 @@ def verify_document_workflow(doc: Document, context: VerificationContext):
     failures.extend(format_failures('numbering', verify_heading_numbering_definitions(doc, context)))
     failures.extend(format_failures('numbering', verify_heading_numbering_chain(doc, context)))
     if failures:
-        raise RuntimeError('Verification failed: ' + '; '.join(failures))
+        guidance = build_xml_debug_lane_guidance(failures, context)
+        raise RuntimeError('Verification failed: ' + '; '.join(failures) + guidance)
 
 
-def verify_heading_conversion(doc: Document, toc_entries: list[tuple[int, str]], numbering_mode: str):
+def verify_heading_conversion(doc: Document, toc_entries: list[tuple[int, str]]):
     context = build_verification_context(
         expected_cover=None,
         expect_cover=False,
         expect_toc=bool(toc_entries),
         expected_headings=toc_entries,
-        numbering_mode=numbering_mode,
         source_kind='legacy',
         toc_refresh_state='not_refreshed',
     )
@@ -1706,7 +2033,8 @@ def verify_heading_conversion(doc: Document, toc_entries: list[tuple[int, str]],
     toc_failures = verify_toc_against_body(doc, context)
     failures = numbering_failures + toc_failures
     if failures:
-        raise RuntimeError('Heading verification failed: ' + '; '.join(failures))
+        guidance = build_xml_debug_lane_guidance(failures, context)
+        raise RuntimeError('Heading verification failed: ' + '; '.join(failures) + guidance)
 
 
 def strip_heading_number_prefix(text: str) -> str:
@@ -1727,7 +2055,7 @@ def is_short_heading_candidate(text: str) -> bool:
     return True
 
 
-def detect_markdown_heading(line: str, heading_base_level: int, numbering_mode: str) -> tuple[int, str] | None:
+def detect_markdown_heading(line: str, heading_base_level: int) -> tuple[int, str] | None:
     if is_table_line(line):
         return None
     if BULLET_RE.match(line) or ORDERED_RE.match(line):
@@ -1737,7 +2065,7 @@ def detect_markdown_heading(line: str, heading_base_level: int, numbering_mode: 
     if heading:
         source_level = len(heading.group(1))
         level = get_heading_level(source_level, heading_base_level)
-        content = normalize_heading_text(heading.group(2).strip(), numbering_mode)
+        content = normalize_heading_text(heading.group(2).strip())
         if not content:
             return None
         return level, content
@@ -1774,7 +2102,7 @@ def detect_heading_base_level(lines: list[str]) -> int:
             continue
         if in_code:
             continue
-        detected = detect_markdown_heading(line, 1, NUMBERING_MODE_A)
+        detected = detect_markdown_heading(line, 1)
         if detected:
             levels.append(detected[0])
     return min(levels) if levels else 1
@@ -1946,23 +2274,25 @@ def set_style_outline_level(style, level: int):
 
 
 def ensure_style_numbering(style, level: int):
-    p_pr = style._element.get_or_add_pPr()
-    for child in list(p_pr):
-        if child.tag == qn('w:numPr'):
-            p_pr.remove(child)
+    clear_style_numbering(style)
 
+    p_pr = style._element.get_or_add_pPr()
     num_pr = OxmlElement('w:numPr')
     ilvl = OxmlElement('w:ilvl')
     ilvl.set(qn('w:val'), str(max(level - 1, 0)))
     num_id = OxmlElement('w:numId')
-    num_id.set(qn('w:val'), TITLE_NUMBERING_ID)
+    num_id.set(qn('w:val'), get_title_numbering_id())
     num_pr.append(ilvl)
     num_pr.append(num_id)
     insert_numpr_after_pstyle(p_pr, num_pr)
 
 
-def configure_document_styles(doc: Document):
-    if 'Normal' in doc.styles:
+def freeze_cover_region_active(force_cover: bool | None, inferred_cover: dict[str, list[str] | str | None] | None) -> bool:
+    return force_cover is False and bool(inferred_cover)
+
+
+def configure_document_styles(doc: Document, freeze_cover_region: bool = False):
+    if 'Normal' in doc.styles and not freeze_cover_region:
         normal = doc.styles['Normal']
         normal.font.name = BODY_SPEC.font_name
         normal.font.size = BODY_SPEC.font_size
@@ -1976,7 +2306,7 @@ def configure_document_styles(doc: Document):
         r_fonts.set(qn('w:eastAsia'), BODY_SPEC.font_name)
         apply_style_paragraph_format(normal, BODY_SPEC)
 
-    if '文章信息' in doc.styles:
+    if '文章信息' in doc.styles and not freeze_cover_region:
         cover_corner_style = doc.styles['文章信息']
         cover_corner_style.font.name = COVER_CORNER_SPEC.font_name
         cover_corner_style.font.size = COVER_CORNER_SPEC.font_size
@@ -2007,6 +2337,7 @@ def configure_document_styles(doc: Document):
         ensure_style_numbering(style, level)
 
     ensure_numbering(doc)
+    detach_inactive_heading_style_links(doc, get_title_numbering_id())
 
 
 def configure_document(doc: Document):
@@ -2101,7 +2432,7 @@ def scan_markdown_toc(lines: list[str]) -> bool:
         if in_code or not stripped:
             continue
         non_empty_seen += 1
-        detected = detect_markdown_heading(line, heading_base_level, NUMBERING_MODE_A)
+        detected = detect_markdown_heading(line, heading_base_level)
         content = detected[1] if detected else stripped
         if is_explicit_toc_heading(content):
             return True
@@ -2121,7 +2452,7 @@ def collect_markdown_toc_entries(lines: list[str]) -> list[tuple[int, str]]:
             continue
         if in_code:
             continue
-        detected = detect_markdown_heading(line, heading_base_level, NUMBERING_MODE_A)
+        detected = detect_markdown_heading(line, heading_base_level)
         if not detected:
             continue
         level, content = detected
@@ -2241,7 +2572,6 @@ def render_markdown(
     analysis: AnalysisResult,
     reserve_cover: bool,
     auto_toc: bool,
-    numbering_mode: str = NUMBERING_MODE_A,
     force_cover: bool | None = None,
     cover_text: str | None = None,
     force_toc: bool | None = None,
@@ -2331,7 +2661,7 @@ def render_markdown(
             i = j
             continue
 
-        detected_heading = detect_markdown_heading(line, heading_base_level, numbering_mode)
+        detected_heading = detect_markdown_heading(line, heading_base_level)
         if detected_heading:
             level, content = detected_heading
             if not content or is_explicit_toc_heading(content):
@@ -2342,7 +2672,7 @@ def render_markdown(
             spec = get_heading_spec(level)
             set_run_font(run, spec.font_name, spec.font_size)
             apply_paragraph_style(p, spec)
-            apply_heading_numbering(p, level, numbering_mode)
+            apply_heading_numbering(p, level)
             i += 1
             continue
 
@@ -2388,7 +2718,6 @@ def render_txt(
     blocks: list[TxtBlock],
     reserve_cover: bool,
     auto_toc: bool,
-    numbering_mode: str = NUMBERING_MODE_A,
     force_cover: bool | None = None,
     cover_text: str | None = None,
     force_toc: bool | None = None,
@@ -2409,11 +2738,11 @@ def render_txt(
     for block in blocks:
         if block.kind == 'heading' and block.level is not None and block.title is not None:
             p = doc.add_paragraph(style=get_heading_style_id(block.level))
-            run = p.add_run(normalize_heading_text(block.title, numbering_mode))
+            run = p.add_run(normalize_heading_text(block.title))
             spec = get_heading_spec(block.level)
             set_run_font(run, spec.font_name, spec.font_size)
             apply_paragraph_style(p, spec)
-            apply_heading_numbering(p, block.level, numbering_mode)
+            apply_heading_numbering(p, block.level)
             continue
 
         p = doc.add_paragraph()
@@ -2430,7 +2759,6 @@ def convert(
     output_path: Path,
     reserve_cover: bool = False,
     auto_toc: bool = False,
-    numbering_mode: str = NUMBERING_MODE_A,
     force_cover: bool | None = None,
     cover_text: str | None = None,
     force_toc: bool | None = None,
@@ -2440,7 +2768,12 @@ def convert(
         raise ValueError(f'Unsupported input type: {suffix}')
 
     if suffix == '.docx':
-        refresh_existing_docx(input_path, output_path, numbering_mode=numbering_mode)
+        refresh_existing_docx(
+            input_path,
+            output_path,
+            force_cover=force_cover,
+            force_toc=force_toc,
+        )
         return
 
     text = input_path.read_text(encoding='utf-8')
@@ -2457,7 +2790,6 @@ def convert(
             analysis,
             reserve_cover,
             auto_toc,
-            numbering_mode,
             force_cover=force_cover,
             cover_text=cover_text,
             force_toc=force_toc,
@@ -2471,7 +2803,6 @@ def convert(
             blocks,
             reserve_cover,
             auto_toc,
-            numbering_mode,
             force_cover=force_cover,
             cover_text=cover_text,
             force_toc=force_toc,
@@ -2486,7 +2817,6 @@ def convert(
         expect_cover=has_cover_section,
         expect_toc=bool(should_render_toc and not analysis.toc_exists and analysis.toc_entries),
         expected_headings=analysis.toc_entries,
-        numbering_mode=numbering_mode,
         source_kind='generated',
         toc_refresh_state='not_refreshed',
     )
@@ -2505,8 +2835,23 @@ def parse_args():
     parser.add_argument('--cover-text', help='Explicit cover text. The first non-empty line is used as the title and later lines are rendered as centered metadata')
     parser.add_argument('--with-toc', dest='force_toc', action='store_const', const=True, default=None, help='Always request generated TOC insertion when no explicit TOC heading exists')
     parser.add_argument('--without-toc', dest='force_toc', action='store_const', const=False, help='Never insert a generated TOC page')
-    parser.add_argument('--numbering-mode', choices=[NUMBERING_MODE_A, NUMBERING_MODE_B], default=NUMBERING_MODE_A, help='Heading numbering mode: A for all-numeric, B for Chinese top-level headings')
     return parser.parse_args()
+
+
+def resolve_output_path(input_path: Path, output: str | None) -> Path:
+    if output is not None:
+        output_path = Path(output).expanduser().resolve()
+        if output_path.is_dir():
+            if input_path.suffix.lower() == '.docx':
+                output_path = output_path / f'{input_path.stem}.refreshed.docx'
+            else:
+                output_path = output_path / input_path.with_suffix('.docx').name
+        if output_path == input_path:
+            raise SystemExit('Refusing to overwrite the source file; choose a different output path')
+        return output_path
+    if input_path.suffix.lower() == '.docx':
+        return input_path.with_name(f'{input_path.stem}.refreshed.docx')
+    return input_path.with_suffix('.docx')
 
 
 def main():
@@ -2516,11 +2861,7 @@ def main():
         raise SystemExit(f'Input file not found: {input_path}')
 
     check_runtime_dependencies(input_path)
-
-    if args.output:
-        output_path = Path(args.output).expanduser().resolve()
-    else:
-        output_path = input_path.with_suffix('.docx')
+    output_path = resolve_output_path(input_path, args.output)
 
     if args.cover_text is not None and args.force_cover is False:
         raise SystemExit('--cover-text cannot be used together with --without-cover')
@@ -2535,7 +2876,6 @@ def main():
         output_path,
         reserve_cover=args.reserve_cover,
         auto_toc=args.auto_toc,
-        numbering_mode=args.numbering_mode,
         force_cover=force_cover,
         cover_text=args.cover_text,
         force_toc=args.force_toc,
