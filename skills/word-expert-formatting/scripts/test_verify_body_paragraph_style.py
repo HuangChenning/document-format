@@ -29,7 +29,6 @@ from text_to_docx import (
     snapshot_cover_signature,
     snapshot_trailing_sectpr_xml,
     start_body_section,
-    trim_leading_empty_body_paragraphs,
     verify_body_paragraph_style,
     verify_cover_presence,
     verify_toc_presence,
@@ -272,29 +271,6 @@ class VerifyBodyParagraphStyleTests(unittest.TestCase):
 
         with self.assertRaises(SystemExit):
             resolve_output_path(input_path, str(input_path))
-
-    def test_trim_leading_empty_body_paragraphs_preserves_drawing_paragraph(self) -> None:
-        doc = Document()
-        configure_document(doc)
-        paragraph = doc.add_paragraph()
-        run = paragraph.add_run()
-        drawing = OxmlElement('w:drawing')
-        run._r.append(drawing)
-
-        trim_leading_empty_body_paragraphs(doc)
-
-        self.assertIs(paragraph._p, doc.paragraphs[0]._p)
-
-    def test_trim_leading_empty_body_paragraphs_preserves_sectpr_paragraph(self) -> None:
-        doc = Document()
-        configure_document(doc)
-        paragraph = doc.add_paragraph()
-        p_pr = paragraph._p.get_or_add_pPr()
-        p_pr.append(OxmlElement('w:sectPr'))
-
-        trim_leading_empty_body_paragraphs(doc)
-
-        self.assertIs(paragraph._p, doc.paragraphs[0]._p)
 
     def test_normalize_existing_toc_paragraphs_starts_after_table_boundary(self) -> None:
         doc = Document()

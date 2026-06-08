@@ -1000,13 +1000,6 @@ def refresh_existing_toc_cache(doc: Document) -> bool:
     return False
 
 
-def clear_toc_paragraph_indentation(paragraph) -> None:
-    p_pr = paragraph._p.get_or_add_pPr()
-    for child in list(p_pr):
-        if child.tag == qn('w:ind'):
-            p_pr.remove(child)
-
-
 def normalize_existing_toc_paragraphs(doc: Document, start_boundary=None) -> None:
     started = start_boundary is None
     for block in iter_body_blocks(doc):
@@ -1020,7 +1013,7 @@ def normalize_existing_toc_paragraphs(doc: Document, start_boundary=None) -> Non
         style_id = get_paragraph_style_id(block)
         if style_id is None or not style_id.upper().startswith('TOC'):
             continue
-        clear_toc_paragraph_indentation(block)
+        clear_paragraph_indentation(block)
 
 
 def get_paragraph_text(paragraph) -> str:
@@ -1135,32 +1128,6 @@ def find_toc_region(doc: Document) -> tuple[object | None, object | None]:
             toc_field = paragraph
             break
     return toc_heading, toc_field
-
-
-def get_first_body_content_child(doc: Document):
-    for child in doc._element.body.iterchildren():
-        if child.tag != qn('w:sectPr'):
-            return child
-    return None
-
-
-def trim_leading_empty_body_paragraphs(doc: Document) -> None:
-    body = doc._element.body
-    while True:
-        first = get_first_body_content_child(doc)
-        if first is None or first.tag == qn('w:tbl'):
-            return
-        if first.tag != qn('w:p'):
-            return
-        paragraph = DocxParagraph(first, doc._body)
-        if get_paragraph_text(paragraph):
-            return
-        if any(child.tag in {qn('w:drawing'), qn('w:pict'), qn('w:object')} for child in first.iter()):
-            return
-        p_pr = first.pPr
-        if p_pr is not None and p_pr.find(qn('w:sectPr')) is not None:
-            return
-        body.remove(first)
 
 
 def find_body_start_boundary(doc: Document) -> object | None:
@@ -1518,8 +1485,6 @@ def refresh_existing_docx(
     if has_cover_section and not preserve_cover_layout:
         ensure_body_section_for_existing_docx(doc)
     expected_headings = normalize_existing_docx_body(doc)
-    for table in collect_tables(doc):
-        normalize_existing_table(table)
     toc_cache_updated = refresh_existing_toc_cache(doc)
     if force_toc is not False:
         normalize_existing_toc_paragraphs(doc, start_boundary=body_boundary if freeze_cover_region else None)
@@ -2868,6 +2833,11 @@ def parse_args():
 def resolve_output_path(input_path: Path, output: str | None) -> Path:
     if output is not None:
         output_path = Path(output).expanduser().resolve()
+        if output_path.is_dir():
+            if input_path.suffix.lower() == '.docx':
+                output_path = output_path / f'{input_path.stem}.refreshed.docx'
+            else:
+                output_path = output_path / input_path.with_suffix('.docx').name
         if output_path == input_path:
             raise SystemExit('Refusing to overwrite the source file; choose a different output path')
         return output_path
