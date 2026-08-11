@@ -47,6 +47,9 @@ The local implementation lives in:
 The script currently:
 - accepts `.md`, `.markdown`, `.txt`, and `.docx`
 - formats headings, paragraphs, lists, tables, code blocks, footer page numbers, and simple cover sections
+- renders Markdown inline emphasis (bold / italic / inline code / strikethrough), hyperlinks, task lists, blockquotes, and footnotes
+- embeds local `![alt](path)` images with page-fit sizing and renders `mermaid` fenced blocks to images (local mmdc, then draw.io CLI, then mermaid.ink, finally falls back to a code block)
+- strips emoji from rendered text automatically while keeping code blocks and inline code verbatim
 - uses all-decimal heading numbering
 - can reserve a placeholder cover page when no cover is detected
 - can generate a Word TOC field page when no explicit TOC heading is detected

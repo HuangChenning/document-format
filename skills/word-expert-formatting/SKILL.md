@@ -103,7 +103,7 @@ If any one of these three layers is inconsistent, treat the heading conversion f
 
 | Element | Font | Size | Line spacing | Space before | Space after | Other |
 |---|---|---:|---|---|---|---|
-| Document title | 黑体 | 28号 | single | 10 pt | 10 pt | bold |
+| Document title | 黑体 | 28 pt | single | 10 pt | 10 pt | bold |
 | Level 1 heading | 黑体 | 三号 | single | 10 pt | 10 pt | bold, use all-decimal heading numbering |
 | Level 2 heading | 黑体 | 小三 | single | 8 pt | 8 pt | bold |
 | Level 3 heading | 黑体 | 四号 | 1.5 lines | 0 | 0 | bold |
@@ -168,7 +168,7 @@ Apply the user's answers directly:
 Use:
 
 ```bash
-python3 skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
+python3 skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
 ```
 
 
@@ -322,8 +322,9 @@ If explicit cover decisions are absent, the script only inspects the first few n
 Use structured Markdown / JSON output instead only when the user wants the formatting model or wants to feed another generation pipeline.
 
 Boundaries of the script workflow:
-- supported well: headings, paragraphs, Markdown tables, fenced code blocks, TXT paragraphs, simple cover blocks
-- not a promise yet: complex embedded HTML, images, footnotes, highly customized layouts
+- supported well: headings, paragraphs, Markdown tables (including rows without leading/trailing pipes, `\|` escaping, and relaxed separator rows), fenced code blocks, TXT paragraphs, simple cover blocks, Markdown thematic breaks (`---`, `***`, `___`), inline emphasis (`**bold**`, `*italic*` / `_italic_`, `` `code` ``, `~~strikethrough~~`, with nesting support), hyperlinks (`[text](url)` and bare URLs rendered as blue underlined links), local images (`![alt](path)` embedded into the document, capped at 14 cm wide and further scaled down for tall images so they never exceed 22 cm in height), HTML entity decoding (`&amp;` and similar), blockquote blocks (`> ` lines merged into left-indented paragraphs with a left border), ordered lists with per-list numbering reset and hanging indent, nested bullet lists up to 9 levels, task lists (`- [x]` / `- [ ]` rendered as ☑ / ☐), footnotes (`[^1]` references plus an end-of-document footnote section), and `mermaid` fenced blocks rendered to images; emoji are automatically stripped from rendered text (headings, paragraphs, table cells, link text) while fenced code blocks, inline code spans, and generated task-list checkboxes are preserved
+- mermaid rendering: tries renderers in order — local `npx @mermaid-js/mermaid-cli` (Node.js required; first run downloads dependencies), then the draw.io desktop CLI when it is installed (two-step `.mmd` -> `.drawio` -> PNG; skipped silently when draw.io is absent or its build is too old for Mermaid conversion), then the online `mermaid.ink` service, and finally keeps the block as a code block when every renderer fails; rendered images are cached by content hash
+- not a promise yet: complex embedded HTML, remote images (rendered as placeholders), highly customized layouts
 
 ## Style source of truth
 
@@ -507,13 +508,13 @@ If some sections do not exist in the source, omit them.
 【格式化执行完毕】
 
 [一级标题] 1 项目背景
-样式：宋体，四号，单倍行距，段前 10 pt，段后 10 pt
+样式：黑体，三号，单倍行距，段前 10 pt，段后 10 pt
 
 [一级标题] 2 实施范围
-样式：宋体，四号，单倍行距，段前 10 pt，段后 10 pt
+样式：黑体，三号，单倍行距，段前 10 pt，段后 10 pt
 
 [一级标题] 3 上线计划
-样式：宋体，四号，单倍行距，段前 10 pt，段后 10 pt
+样式：黑体，三号，单倍行距，段前 10 pt，段后 10 pt
 ```
 
 ## Handoff guidance

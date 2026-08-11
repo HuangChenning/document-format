@@ -2,7 +2,16 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
+import html
 import re
+import shutil
+import struct
+import subprocess
+import sys
+import tempfile
+import urllib.request
 from pathlib import Path
 
 DOCX_IMPORT_ERROR = None
@@ -11,6 +20,7 @@ try:
     from docx import Document
     from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
     from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_LINE_SPACING
+    from docx.opc.constants import RELATIONSHIP_TYPE as RT
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
     from docx.shared import Cm, Pt
@@ -23,6 +33,7 @@ except ImportError as exc:
     WD_ROW_HEIGHT_RULE = None
     DocxTable = None
     DocxParagraph = None
+    RT = None
 
     class _DummyAlign:
         LEFT = 0
@@ -85,6 +96,25 @@ CODE_LEFT_INDENT = Cm(0.74)
 CODE_RIGHT_INDENT = Cm(0.74)
 CODE_SHADE = "F2F2F2"
 TABLE_HEADER_SHADE = "D9EAF7"
+LINK_COLOR = '0563C1'
+BLOCKQUOTE_BORDER_COLOR = '999999'
+BLOCKQUOTE_LEFT_INDENT = Cm(0.74)
+MAX_IMAGE_WIDTH = Cm(14)
+MAX_IMAGE_HEIGHT = Cm(22)
+MAX_BULLET_LEVEL = 9
+ORDERED_LIST_INDENT_TWIPS = 480
+MERMAID_LANGUAGES = {'mermaid', 'mmd'}
+_EMOJI_CHAR = '[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\u00A9\u00AE\u2122\u3030\u303D\u3297\u3299]'
+EMOJI_PATTERN = re.compile(
+    _EMOJI_CHAR + '(?:[\uFE0F\u200D\u20E3]' + _EMOJI_CHAR + ')*[\uFE0F\u200D\u20E3]?'
+)
+MMDC_TIMEOUT_SECONDS = 300
+MERMAID_INK_TIMEOUT_SECONDS = 30
+DRAWIO_CLI_TIMEOUT_SECONDS = 300
+DRAWIO_MACOS_CLI = Path('/Applications/draw.io.app/Contents/MacOS/draw.io')
+DRAWIO_WINDOWS_CANDIDATES = (
+    Path(r'C:\Program Files\draw.io\draw.io.exe'),
+)
 COVER_TOP_SPACER_COUNT = 6
 TOC_TITLE = "目录"
 TOC_HEADING_MARKERS = {"目录", "目 录", "toc", "table of contents", "contents"}
@@ -94,6 +124,10 @@ TITLE_NUMBERING_ABSTRACT_ID = '700'
 TITLE_NUMBERING_ID = '701'
 BULLET_NUMBERING_ABSTRACT_ID = '702'
 BULLET_NUMBERING_ID = '703'
+ORDERED_NUMBERING_ABSTRACT_ID = '704'
+ORDERED_NUMBERING_ID_BASE = 9000
+
+ACTIVE_FOOTNOTES: dict[str, str] = {}
 
 
 class StyleSpec:
@@ -126,6 +160,7 @@ COVER_TITLE_SPEC = StyleSpec(FONT_SONG, Pt(22), "one_point_five", 9, 9, 0, True,
 COVER_META_SPEC = StyleSpec(FONT_SONG, Pt(14), "one_point_five", 0, 0, 0, None)
 COVER_CORNER_SPEC = StyleSpec(FONT_HEI, Pt(10.5), "single", 0, 0, 0, False)
 BODY_SPEC = StyleSpec(FONT_SONG, SIZE_BODY, "one_point_five", 0, 0, 2, None, WD_ALIGN_PARAGRAPH.JUSTIFY)
+BLOCKQUOTE_SPEC = StyleSpec(FONT_SONG, SIZE_BODY, "one_point_five", 3, 3, 0, None, WD_ALIGN_PARAGRAPH.LEFT)
 TABLE_SPEC = StyleSpec(FONT_SONG, SIZE_TABLE, "one_point_five", 0, 0, 0, None)
 CODE_SPEC = StyleSpec(FONT_MONO, SIZE_CODE, "one_point_five", 6, 6, 0, None)
 PAGE_SPEC = StyleSpec(FONT_SONG, Pt(10.5), "one_point_five", 0, 0, 0, None)
@@ -145,6 +180,25 @@ MARKDOWN_CHINESE_HEADING_RE = re.compile(r'^\s*([一二三四五六七八九十�
 COVER_LABEL_RE = re.compile(r'^\s*(?:\[(封面标题|封面公司/日期|公司名称|日期)\]|(封面标题|封面公司/日期|公司名称|日期))\s*[:：]\s*(.*)$')
 COVER_CORNER_LABEL_RE = re.compile(r'^\s*(编\s*号|版\s*本\s*号|受控状态|密\s*级)\s*[:：].*$')
 DATE_RE = re.compile(r'\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b|\b\d{4}年\d{1,2}月\d{1,2}日\b')
+INLINE_BOLD_RE = re.compile(r'\*\*(.+?)\*\*')
+THEMATIC_BREAK_RE = re.compile(r'^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$')
+BLOCKQUOTE_RE = re.compile(r'^\s{0,3}>\s?')
+FOOTNOTE_DEF_RE = re.compile(r'^\s{0,3}\[\^([^\]]+)\]:\s*(.+?)\s*$')
+TASK_LIST_RE = re.compile(r'^\[([ xX])\]\s+(.*)$')
+FENCE_LANG_RE = re.compile(r'^\s*(?:`{3,}|~{3,})\s*([A-Za-z0-9_+-]*)')
+
+INLINE_TOKEN_RE = re.compile('|'.join((
+    r'(?P<code>`(?P<code_text>[^`\n]+)`)',
+    r'(?P<bold>\*\*(?P<bold_text>.+?)\*\*)',
+    r'(?P<strike>~~(?P<strike_text>.+?)~~)',
+    r'(?P<image>!\[(?P<image_alt>[^\]]*)\]\((?P<image_url>[^()\s]+)\))',
+    r'(?P<footnote>\[\^(?P<footnote_id>[^\]\n]+)\])',
+    r'(?P<link>\[(?P<link_text>[^\]\n]+)\]\((?P<link_url>[^()\s]+)\))',
+    r'(?P<italic_star>(?<!\*)\*(?!\*)(?P<italic_star_text>[^*\n]+?)\*(?!\*))',
+    r'(?P<italic_under>(?<![A-Za-z0-9_])_(?!_)(?P<italic_under_text>[^_\n]+?)_(?![A-Za-z0-9_]))',
+    r'(?P<bare_url>https?://[^\s<>()（）「」【】]+)',
+)))
+BARE_URL_TRAILING = '.,;:!?。，；：！？、”’\'"'
 
 
 class AnalysisResult:
@@ -543,12 +597,33 @@ def apply_bullet_style(paragraph, level: int):
 
     num_pr = OxmlElement('w:numPr')
     ilvl = OxmlElement('w:ilvl')
-    ilvl.set(qn('w:val'), str(max(min(level, 2), 0)))
+    ilvl.set(qn('w:val'), str(max(min(level, MAX_BULLET_LEVEL - 1), 0)))
     num_id = OxmlElement('w:numId')
     num_id.set(qn('w:val'), BULLET_NUMBERING_ID)
     num_pr.append(ilvl)
     num_pr.append(num_id)
     p_pr.append(num_pr)
+
+
+def apply_ordered_list_style(paragraph, num_id: str | None):
+    apply_paragraph_style(paragraph, BODY_SPEC)
+    p_pr = paragraph._p.get_or_add_pPr()
+    ind = p_pr.get_or_add_ind()
+    ind.set(qn('w:firstLineChars'), '0')
+    ind.set(qn('w:firstLine'), '0')
+    ind.set(qn('w:left'), str(ORDERED_LIST_INDENT_TWIPS))
+    ind.set(qn('w:hanging'), str(ORDERED_LIST_INDENT_TWIPS))
+    if num_id is None:
+        return
+    clear_paragraph_numbering(paragraph)
+    num_pr = OxmlElement('w:numPr')
+    ilvl = OxmlElement('w:ilvl')
+    ilvl.set(qn('w:val'), '0')
+    num_id_el = OxmlElement('w:numId')
+    num_id_el.set(qn('w:val'), num_id)
+    num_pr.append(ilvl)
+    num_pr.append(num_id_el)
+    insert_numpr_after_pstyle(p_pr, num_pr)
 
 
 def set_cell_margins(cell, top=TABLE_CELL_MARGIN_TOP, start=TABLE_CELL_MARGIN_LEFT, bottom=TABLE_CELL_MARGIN_BOTTOM, end=TABLE_CELL_MARGIN_RIGHT):
@@ -699,6 +774,73 @@ def ensure_title_numbering(doc: Document, numbering, abstract_id: str, numbering
         ensure_numbering_child_order(numbering, title_num, 'num')
 
 
+def get_numbering_element(doc: Document):
+    numbering_part = doc.part.numbering_part
+    if numbering_part is None:
+        return None
+    return numbering_part.numbering_definitions._numbering
+
+
+def ensure_ordered_numbering_abstract(numbering):
+    existing = numbering.xpath(f'./w:abstractNum[@w:abstractNumId="{ORDERED_NUMBERING_ABSTRACT_ID}"]')
+    if existing:
+        return
+    ordered_abstract = OxmlElement('w:abstractNum')
+    ordered_abstract.set(qn('w:abstractNumId'), ORDERED_NUMBERING_ABSTRACT_ID)
+    for ilvl in range(MAX_BULLET_LEVEL):
+        lvl = OxmlElement('w:lvl')
+        lvl.set(qn('w:ilvl'), str(ilvl))
+
+        start = OxmlElement('w:start')
+        start.set(qn('w:val'), '1')
+        lvl.append(start)
+
+        num_fmt = OxmlElement('w:numFmt')
+        num_fmt.set(qn('w:val'), 'decimal')
+        lvl.append(num_fmt)
+
+        suff = OxmlElement('w:suff')
+        suff.set(qn('w:val'), 'space')
+        lvl.append(suff)
+
+        lvl_text = OxmlElement('w:lvlText')
+        lvl_text.set(qn('w:val'), f'%{ilvl + 1}.')
+        lvl.append(lvl_text)
+
+        lvl_jc = OxmlElement('w:lvlJc')
+        lvl_jc.set(qn('w:val'), 'left')
+        lvl.append(lvl_jc)
+
+        r_pr = OxmlElement('w:rPr')
+        r_fonts = OxmlElement('w:rFonts')
+        r_fonts.set(qn('w:ascii'), FONT_SONG)
+        r_fonts.set(qn('w:hAnsi'), FONT_SONG)
+        r_fonts.set(qn('w:eastAsia'), FONT_SONG)
+        r_pr.append(r_fonts)
+        sz = OxmlElement('w:sz')
+        sz.set(qn('w:val'), str(int(SIZE_BODY.pt * 2)))
+        r_pr.append(sz)
+        sz_cs = OxmlElement('w:szCs')
+        sz_cs.set(qn('w:val'), str(int(SIZE_BODY.pt * 2)))
+        r_pr.append(sz_cs)
+        ordered_abstract.append(lvl)
+
+    ensure_numbering_child_order(numbering, ordered_abstract, 'abstract')
+
+
+def create_ordered_numbering_instance(numbering) -> str:
+    ensure_ordered_numbering_abstract(numbering)
+    existing_ids = [int(node.get(qn('w:numId'))) for node in numbering.xpath('./w:num')]
+    next_id = max(existing_ids + [ORDERED_NUMBERING_ID_BASE - 1]) + 1
+    num = OxmlElement('w:num')
+    num.set(qn('w:numId'), str(next_id))
+    ref = OxmlElement('w:abstractNumId')
+    ref.set(qn('w:val'), ORDERED_NUMBERING_ABSTRACT_ID)
+    num.append(ref)
+    ensure_numbering_child_order(numbering, num, 'num')
+    return str(next_id)
+
+
 def ensure_numbering(doc: Document):
     numbering_part = doc.part.numbering_part
     if numbering_part is None:
@@ -713,7 +855,8 @@ def ensure_numbering(doc: Document):
     bullet_abstract = OxmlElement('w:abstractNum')
     bullet_abstract.set(qn('w:abstractNumId'), BULLET_NUMBERING_ABSTRACT_ID)
     bullet_chars = ['●', '■', '◆']
-    for ilvl, char in enumerate(bullet_chars):
+    for ilvl in range(MAX_BULLET_LEVEL):
+        char = bullet_chars[ilvl % len(bullet_chars)]
         lvl = OxmlElement('w:lvl')
         lvl.set(qn('w:ilvl'), str(ilvl))
 
@@ -735,8 +878,8 @@ def ensure_numbering(doc: Document):
 
         p_pr = OxmlElement('w:pPr')
         ind = OxmlElement('w:ind')
-        ind.set(qn('w:left'), '0')
-        ind.set(qn('w:hanging'), '0')
+        ind.set(qn('w:left'), str(ORDERED_LIST_INDENT_TWIPS * (ilvl + 1)))
+        ind.set(qn('w:hanging'), str(ORDERED_LIST_INDENT_TWIPS))
         p_pr.append(ind)
         lvl.append(p_pr)
 
@@ -784,7 +927,7 @@ def apply_heading_numbering(paragraph, level: int):
 
 
 def normalize_heading_text(text: str) -> str:
-    content = text.strip()
+    content = strip_inline_emphasis(text.strip())
     chinese = MARKDOWN_CHINESE_HEADING_RE.match(content)
     if chinese:
         return chinese.group(2).strip()
@@ -1867,11 +2010,37 @@ def verify_frozen_cover_region(doc: Document, context: VerificationContext) -> l
     return failures
 
 
+def is_list_paragraph(paragraph) -> bool:
+    style_name = paragraph.style.name if paragraph.style is not None else ''
+    if style_name == 'List Number':
+        return True
+    numpr = extract_paragraph_numpr(paragraph)
+    if numpr is None:
+        return False
+    num_id_el = numpr.find(qn('w:numId'))
+    value = num_id_el.get(qn('w:val')) if num_id_el is not None else None
+    if not value:
+        return False
+    if value == BULLET_NUMBERING_ID:
+        return True
+    return value.isdigit() and int(value) >= ORDERED_NUMBERING_ID_BASE
+
+
+def is_blockquote_paragraph(paragraph) -> bool:
+    p_pr = paragraph._p.pPr
+    if p_pr is None:
+        return False
+    p_bdr = p_pr.find(qn('w:pBdr'))
+    return p_bdr is not None and p_bdr.find(qn('w:left')) is not None
+
+
 def verify_body_paragraph_style(doc: Document, context: VerificationContext) -> list[str]:
     failures: list[str] = []
     for paragraph in collect_body_paragraphs(doc, context):
+        if is_list_paragraph(paragraph) or is_blockquote_paragraph(paragraph):
+            continue
         text = get_paragraph_text(paragraph)
-        if get_run_font_names(paragraph) not in [set(), {BODY_SPEC.font_name}]:
+        if get_run_font_names(paragraph) - {FONT_MONO} not in [set(), {BODY_SPEC.font_name}]:
             failures.append(f'body font mismatch: {text}')
         sizes = get_run_font_sizes(paragraph)
         if sizes not in [set(), {BODY_SPEC.font_size.pt}]:
@@ -1920,7 +2089,7 @@ def verify_table_text_style(doc: Document, context: VerificationContext) -> list
         for row in table.rows:
             for cell in row.cells:
                 for paragraph in get_non_empty_paragraphs(cell.paragraphs):
-                    if get_run_font_names(paragraph) not in [set(), {TABLE_SPEC.font_name}]:
+                    if get_run_font_names(paragraph) - {FONT_MONO} not in [set(), {TABLE_SPEC.font_name}]:
                         failures.append(f'table font mismatch: {get_paragraph_text(paragraph)}')
                     sizes = get_run_font_sizes(paragraph)
                     if sizes not in [set(), {TABLE_SPEC.font_size.pt}]:
@@ -2046,6 +2215,143 @@ def is_fence_line(line: str) -> bool:
     return stripped.startswith('```') or stripped.startswith('~~~')
 
 
+def parse_fence_language(line: str) -> str | None:
+    match = FENCE_LANG_RE.match(line)
+    if match and match.group(1):
+        return match.group(1).lower()
+    return None
+
+
+def get_mermaid_cache_dir() -> Path:
+    cache_dir = Path(tempfile.gettempdir()) / 'word-expert-mermaid-cache'
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def render_mermaid_with_mmdc(source: Path, target: Path) -> bool:
+    if shutil.which('npx') is None:
+        return False
+    try:
+        completed = subprocess.run(
+            ['npx', '-y', '@mermaid-js/mermaid-cli', '-i', str(source), '-o', str(target), '-b', 'white', '-s', '2'],
+            capture_output=True,
+            text=True,
+            timeout=MMDC_TIMEOUT_SECONDS,
+            cwd=str(source.parent),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0 and target.is_file() and target.stat().st_size > 0
+
+
+def render_mermaid_with_ink(code: str, target: Path) -> bool:
+    encoded = base64.urlsafe_b64encode(code.encode('utf-8')).decode('ascii')
+    url = f'https://mermaid.ink/img/{encoded}?bgColor=white'
+    request = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 word-expert-formatting'})
+    try:
+        with urllib.request.urlopen(request, timeout=MERMAID_INK_TIMEOUT_SECONDS) as response:
+            payload = response.read()
+    except Exception:
+        return False
+    if not payload:
+        return False
+    target.write_bytes(payload)
+    return True
+
+
+def find_drawio_cli() -> str | None:
+    found = shutil.which('drawio') or shutil.which('draw.io')
+    if found:
+        return found
+    if DRAWIO_MACOS_CLI.is_file():
+        return str(DRAWIO_MACOS_CLI)
+    if sys.platform == 'win32':
+        for candidate in DRAWIO_WINDOWS_CANDIDATES:
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
+def render_mermaid_with_drawio(source: Path, target: Path) -> bool:
+    cli = find_drawio_cli()
+    if cli is None:
+        return False
+    drawio_file = source.with_suffix('.drawio')
+    commands = (
+        [cli, '-x', '-f', 'xml', '-o', str(drawio_file), str(source)],
+        [cli, '-x', '-f', 'png', '-b', '10', '-s', '2', '-o', str(target), str(drawio_file)],
+    )
+    for command in commands:
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=DRAWIO_CLI_TIMEOUT_SECONDS,
+                cwd=str(source.parent),
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        if completed.returncode != 0:
+            return False
+    return target.is_file() and target.stat().st_size > 0
+
+
+def render_mermaid_to_png(code: str) -> Path | None:
+    digest = hashlib.sha256(code.encode('utf-8')).hexdigest()[:16]
+    cache_dir = get_mermaid_cache_dir()
+    cached = cache_dir / f'{digest}.png'
+    if cached.is_file() and cached.stat().st_size > 0:
+        return cached
+    source = cache_dir / f'{digest}.mmd'
+    source.write_text(code, encoding='utf-8')
+    if render_mermaid_with_mmdc(source, cached):
+        return cached
+    if render_mermaid_with_drawio(source, cached):
+        return cached
+    if render_mermaid_with_ink(code, cached):
+        return cached
+    return None
+
+
+def render_mermaid_block(doc: Document, code: str) -> bool:
+    image_path = render_mermaid_to_png(code)
+    if image_path is None:
+        return False
+    try:
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(6)
+        p.paragraph_format.space_after = Pt(6)
+        run = p.add_run()
+        run.add_picture(str(image_path), width=fit_image_width(image_path))
+        return True
+    except Exception:
+        return False
+
+
+def render_code_block(doc: Document, code_lines: list[str]):
+    p = doc.add_paragraph()
+    apply_code_block_style(p)
+    font_size = Pt(fit_code_font_size(code_lines))
+    for idx, code_line in enumerate(code_lines):
+        run = p.add_run(code_line)
+        set_run_font(run, CODE_SPEC.font_name, font_size)
+        if idx != len(code_lines) - 1:
+            run.add_break()
+
+
+def fit_code_font_size(code_lines: list[str]) -> float:
+    """按最长行估算宽度，超宽时缩小代码字号（下限 6pt），避免强制换行拆散 ASCII 图。"""
+    base = float(CODE_SPEC.font_size.pt)
+    max_em = max((sum(1.0 if ord(ch) > 0x2E7F else 0.6 for ch in line) for line in code_lines), default=0)
+    if max_em <= 0:
+        return base
+    available_pt = (21.0 - PAGE_MARGIN_LEFT.cm - PAGE_MARGIN_RIGHT.cm - CODE_LEFT_INDENT.cm - CODE_RIGHT_INDENT.cm) / 2.54 * 72.0
+    # 0.95 安全系数：补偿 em 估算与实际字形宽度（含回退字体）的偏差
+    return max(min(base, available_pt * 0.95 / max_em), 6.0)
+
+
 def is_short_heading_candidate(text: str) -> bool:
     stripped = text.strip()
     if not stripped or len(stripped) > TXT_HEADING_MAX_LENGTH:
@@ -2053,6 +2359,115 @@ def is_short_heading_candidate(text: str) -> bool:
     if stripped.endswith(('。', '；', '，', '.', ';', ',')):
         return False
     return True
+
+
+def render_thematic_break(doc: Document):
+    p = doc.add_paragraph()
+    fmt = p.paragraph_format
+    fmt.space_before = Pt(6)
+    fmt.space_after = Pt(6)
+    p_pr = p._p.get_or_add_pPr()
+    p_bdr = OxmlElement('w:pBdr')
+    bottom = OxmlElement('w:bottom')
+    bottom.set(qn('w:val'), 'single')
+    bottom.set(qn('w:sz'), '6')
+    bottom.set(qn('w:space'), '1')
+    bottom.set(qn('w:color'), 'auto')
+    p_bdr.append(bottom)
+    spacing = p_pr.find(qn('w:spacing'))
+    if spacing is not None:
+        spacing.addprevious(p_bdr)
+    else:
+        p_pr.append(p_bdr)
+
+
+def render_markdown_table(doc: Document, table_lines: list[str]):
+    rows = [split_table_row(tl) for tl in table_lines]
+    has_header_sep = len(rows) >= 2 and is_separator_line(table_lines[1])
+    if has_header_sep:
+        header = rows[0]
+        body = rows[2:]
+    else:
+        header = None
+        body = rows
+
+    col_count = max(len(r) for r in ([header] if header else []) + body)
+    table_rows = (1 if header else 0) + max(len(body), 1)
+    table = doc.add_table(rows=table_rows, cols=col_count)
+    table.style = 'Table Grid'
+    set_table_width(table, col_count)
+    row_idx = 0
+    if header:
+        for col, val in enumerate(header):
+            cell = table.rows[0].cells[col]
+            set_cell_text(cell, val, bold=True)
+            shade_cell(cell, TABLE_HEADER_SHADE)
+        row_idx = 1
+    body_rows = body if body else [[]]
+    for row in body_rows:
+        for col in range(col_count):
+            val = row[col] if col < len(row) else ''
+            set_cell_text(table.rows[row_idx].cells[col], val, bold=False)
+        row_idx += 1
+
+
+def add_blockquote_border(paragraph):
+    p_pr = paragraph._p.get_or_add_pPr()
+    p_bdr = OxmlElement('w:pBdr')
+    left = OxmlElement('w:left')
+    left.set(qn('w:val'), 'single')
+    left.set(qn('w:sz'), '18')
+    left.set(qn('w:space'), '8')
+    left.set(qn('w:color'), BLOCKQUOTE_BORDER_COLOR)
+    p_bdr.append(left)
+    spacing = p_pr.find(qn('w:spacing'))
+    if spacing is not None:
+        spacing.addprevious(p_bdr)
+    else:
+        p_pr.append(p_bdr)
+
+
+def render_blockquote(doc: Document, quote_lines: list[str]):
+    p = doc.add_paragraph()
+    apply_paragraph_style(p, BLOCKQUOTE_SPEC)
+    p.paragraph_format.left_indent = BLOCKQUOTE_LEFT_INDENT
+    add_blockquote_border(p)
+    for idx, text in enumerate(quote_lines):
+        if idx > 0:
+            p.add_run().add_break()
+        add_formatted_runs(p, text, BLOCKQUOTE_SPEC.font_name, BLOCKQUOTE_SPEC.font_size)
+
+
+def render_footnotes_section(doc: Document, footnotes: dict[str, str]):
+    if not footnotes:
+        return
+    heading = doc.add_paragraph()
+    apply_paragraph_style(heading, BODY_SPEC)
+    heading.paragraph_format.space_before = Pt(10)
+    title_run = heading.add_run('脚注')
+    title_run.bold = True
+    set_run_font(title_run, FONT_HEI, SIZE_BODY)
+    for idx, text in enumerate(footnotes.values(), start=1):
+        p = doc.add_paragraph()
+        apply_paragraph_style(p, BODY_SPEC)
+        add_formatted_runs(p, f'[{idx}] {text}', BODY_SPEC.font_name, BODY_SPEC.font_size)
+
+
+def collect_footnote_definitions(lines: list[str]) -> tuple[dict[str, str], set[int]]:
+    footnotes: dict[str, str] = {}
+    definition_lines: set[int] = set()
+    fence_open = False
+    for idx, raw in enumerate(lines):
+        if is_fence_line(raw):
+            fence_open = not fence_open
+            continue
+        if fence_open:
+            continue
+        match = FOOTNOTE_DEF_RE.match(raw)
+        if match and match.group(1) not in footnotes:
+            footnotes[match.group(1)] = match.group(2)
+            definition_lines.add(idx)
+    return footnotes, definition_lines
 
 
 def detect_markdown_heading(line: str, heading_base_level: int) -> tuple[int, str] | None:
@@ -2077,14 +2492,14 @@ def detect_markdown_heading(line: str, heading_base_level: int) -> tuple[int, st
     numbered = MARKDOWN_NUMBERED_HEADING_RE.match(stripped)
     if numbered:
         numbering = numbered.group(1)
-        title = numbered.group(2).strip()
+        title = strip_inline_emphasis(numbered.group(2).strip())
         if not title:
             return None
         return min(numbering.count('.') + 1, MAX_HEADING_LEVEL), title
 
     chinese = MARKDOWN_CHINESE_HEADING_RE.match(stripped)
     if chinese:
-        title = chinese.group(2).strip()
+        title = strip_inline_emphasis(chinese.group(2).strip())
         if not title:
             return None
         return 1, title
@@ -2184,30 +2599,25 @@ def render_cover(doc: Document, cover: dict[str, list[str] | str | None]):
     corner_meta = cover.get('corner_meta') or []
     for item in corner_meta:
         p = doc.add_paragraph()
-        run = p.add_run(str(item))
-        set_run_font(run, COVER_CORNER_SPEC.font_name, COVER_CORNER_SPEC.font_size)
         apply_paragraph_style(p, COVER_CORNER_SPEC)
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        run.bold = False
+        add_formatted_runs(p, str(item), COVER_CORNER_SPEC.font_name, COVER_CORNER_SPEC.font_size, base_bold=False)
     for _ in range(COVER_TOP_SPACER_COUNT):
         spacer = doc.add_paragraph()
         apply_paragraph_style(spacer, COVER_META_SPEC)
         spacer.alignment = WD_ALIGN_PARAGRAPH.CENTER
     for idx, item in enumerate(title_lines):
         p = doc.add_paragraph()
-        run = p.add_run(str(item))
-        set_run_font(run, COVER_TITLE_SPEC.font_name, COVER_TITLE_SPEC.font_size)
         apply_paragraph_style(p, COVER_TITLE_SPEC)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run.bold = True
+        add_formatted_runs(p, str(item), COVER_TITLE_SPEC.font_name, COVER_TITLE_SPEC.font_size, base_bold=True)
         if idx != 0:
             p.paragraph_format.space_before = Pt(0)
     for item in meta:
         p = doc.add_paragraph()
-        run = p.add_run(str(item))
-        set_run_font(run, COVER_META_SPEC.font_name, COVER_META_SPEC.font_size)
         apply_paragraph_style(p, COVER_META_SPEC)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        add_formatted_runs(p, str(item), COVER_META_SPEC.font_name, COVER_META_SPEC.font_size, base_bold=False)
 
 
 def build_explicit_cover(cover_text: str | None) -> dict[str, list[str] | str | None]:
@@ -2359,11 +2769,22 @@ def is_separator_line(line: str) -> bool:
     if not s:
         return False
     parts = [p.strip() for p in s.split('|')]
-    return all(parts) and all(re.fullmatch(r':?-{3,}:?', p) for p in parts)
+    return all(parts) and all(re.fullmatch(r':?-{1,}:?', p) for p in parts)
+
+
+def is_loose_table_separator(line: str) -> bool:
+    s = line.strip()
+    if '|' not in s or is_table_line(line):
+        return False
+    parts = [p.strip() for p in s.strip('|').split('|')]
+    return bool(parts) and all(re.fullmatch(r':?-{1,}:?', p) for p in parts)
 
 
 def split_table_row(line: str) -> list[str]:
-    return [c.strip() for c in line.strip().strip('|').split('|')]
+    placeholder = '\x00'
+    escaped = line.replace('\\|', placeholder)
+    cells = escaped.strip().strip('|').split('|')
+    return [c.strip().replace(placeholder, '|') for c in cells]
 
 
 def set_table_width(table, col_count: int):
@@ -2393,16 +2814,200 @@ def set_table_width(table, col_count: int):
             tc_w.set(qn('w:type'), 'dxa')
 
 
+def strip_inline_emphasis(text: str) -> str:
+    content = INLINE_BOLD_RE.sub(r'\1', text)
+    content = re.sub(r'~~(.+?)~~', r'\1', content)
+    content = re.sub(r'`([^`\n]+)`', r'\1', content)
+    content = re.sub(r'!\[([^\]]*)\]\([^()\s]+\)', r'\1', content)
+    content = re.sub(r'\[([^\]\n]+)\]\([^()\s]+\)', r'\1', content)
+    content = re.sub(r'(?<!\*)\*(?!\*)([^*\n]+?)\*(?!\*)', r'\1', content)
+    return content
+
+
+def shade_run(run, fill: str):
+    r_pr = run._element.get_or_add_rPr()
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear')
+    shd.set(qn('w:color'), 'auto')
+    shd.set(qn('w:fill'), fill)
+    r_pr.append(shd)
+
+
+def add_hyperlink(paragraph, url: str, text: str, font_name: str, font_size):
+    part = paragraph.part
+    r_id = part.relate_to(url, RT.HYPERLINK, is_external=True)
+    hyperlink = OxmlElement('w:hyperlink')
+    hyperlink.set(qn('r:id'), r_id)
+    run_el = OxmlElement('w:r')
+    r_pr = OxmlElement('w:rPr')
+    r_fonts = OxmlElement('w:rFonts')
+    r_fonts.set(qn('w:ascii'), font_name)
+    r_fonts.set(qn('w:hAnsi'), font_name)
+    r_fonts.set(qn('w:eastAsia'), font_name)
+    r_pr.append(r_fonts)
+    color = OxmlElement('w:color')
+    color.set(qn('w:val'), LINK_COLOR)
+    r_pr.append(color)
+    underline = OxmlElement('w:u')
+    underline.set(qn('w:val'), 'single')
+    r_pr.append(underline)
+    sz = OxmlElement('w:sz')
+    sz.set(qn('w:val'), str(int(font_size.pt * 2)))
+    r_pr.append(sz)
+    sz_cs = OxmlElement('w:szCs')
+    sz_cs.set(qn('w:val'), str(int(font_size.pt * 2)))
+    r_pr.append(sz_cs)
+    run_el.append(r_pr)
+    text_el = OxmlElement('w:t')
+    text_el.set(qn('xml:space'), 'preserve')
+    text_el.text = text
+    run_el.append(text_el)
+    hyperlink.append(run_el)
+    paragraph._p.append(hyperlink)
+
+
+def read_image_pixel_size(path: Path) -> tuple[int, int] | None:
+    """读取 PNG/JPEG 的像素宽高，解析失败返回 None。"""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if data.startswith(b'\x89PNG\r\n\x1a\n') and len(data) >= 24:
+        width, height = struct.unpack('>II', data[16:24])
+        return int(width), int(height)
+    if data.startswith(b'\xff\xd8'):
+        idx = 2
+        while idx + 9 < len(data):
+            if data[idx] != 0xFF:
+                idx += 1
+                continue
+            marker = data[idx + 1]
+            if marker in (0xC0, 0xC1, 0xC2, 0xC3):
+                height, width = struct.unpack('>HH', data[idx + 5:idx + 9])
+                return int(width), int(height)
+            if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+                idx += 2
+                continue
+            if idx + 4 > len(data):
+                break
+            length = struct.unpack('>H', data[idx + 2:idx + 4])[0]
+            idx += 2 + length
+    return None
+
+
+def fit_image_width(path: Path) -> int:
+    """按图片原始宽高比，返回同时满足最大宽度与最大高度约束的 EMU 宽度。"""
+    size = read_image_pixel_size(path)
+    if not size or size[0] <= 0 or size[1] <= 0:
+        return int(MAX_IMAGE_WIDTH)
+    width_px, height_px = size
+    width = int(MAX_IMAGE_WIDTH)
+    if width * height_px / width_px > int(MAX_IMAGE_HEIGHT):
+        width = int(int(MAX_IMAGE_HEIGHT) * width_px / height_px)
+    return max(width, 1)
+
+
+def emit_image_token(paragraph, alt: str, url: str, font_name: str, font_size):
+    candidate = Path(url)
+    if not url.startswith(('http://', 'https://')) and candidate.is_file():
+        try:
+            run = paragraph.add_run()
+            run.add_picture(str(candidate), width=fit_image_width(candidate))
+            return
+        except Exception:
+            pass
+    placeholder = strip_emoji(f'[图片: {alt}]' if alt else f'[图片: {url}]')
+    run = paragraph.add_run(placeholder)
+    run.italic = True
+    set_run_font(run, font_name, font_size)
+
+
+def emit_footnote_ref(paragraph, footnote_id: str, font_name: str, font_size):
+    keys = list(ACTIVE_FOOTNOTES.keys())
+    if footnote_id not in ACTIVE_FOOTNOTES:
+        run = paragraph.add_run(f'[^{footnote_id}]')
+        set_run_font(run, font_name, font_size)
+        return
+    index = keys.index(footnote_id) + 1
+    run = paragraph.add_run(f'[{index}]')
+    run.font.superscript = True
+    set_run_font(run, font_name, font_size)
+
+
+def strip_emoji(text: str) -> str:
+    """移除 emoji 字符（含变体选择符/零宽连接符）。
+
+    移除后折叠残留连续空格，并裁掉因移除而在字符串首尾新产生的空白；
+    emoji 紧贴前文时保留其后随空白作为分隔，避免词语粘连。
+    """
+    cleaned = re.sub(r' {2,}', ' ', EMOJI_PATTERN.sub('', text))
+    if cleaned and cleaned[0] == ' ' and text[:1] not in (' ', '\t'):
+        cleaned = cleaned.lstrip(' ')
+    if cleaned and cleaned[-1] == ' ' and text[-1:] not in (' ', '\t'):
+        cleaned = cleaned.rstrip(' ')
+    return cleaned
+
+
+def emit_plain_segment(paragraph, text: str, font_name: str, font_size, bold: bool, italic: bool, strike: bool):
+    if not text:
+        return
+    cleaned = strip_emoji(html.unescape(text))
+    if not cleaned:
+        return
+    run = paragraph.add_run(cleaned)
+    if bold:
+        run.bold = True
+    if italic:
+        run.italic = True
+    if strike:
+        run.font.strike = True
+    set_run_font(run, font_name, font_size)
+
+
+def add_formatted_runs(paragraph, text: str, font_name: str, font_size, base_bold: bool = False):
+    emit_formatted_segment(paragraph, text, font_name, font_size, base_bold, False, False)
+
+
+def emit_formatted_segment(paragraph, text: str, font_name: str, font_size, bold: bool, italic: bool, strike: bool):
+    pos = 0
+    for match in INLINE_TOKEN_RE.finditer(text):
+        if match.start() > pos:
+            emit_plain_segment(paragraph, text[pos:match.start()], font_name, font_size, bold, italic, strike)
+        if match.group('code') is not None:
+            run = paragraph.add_run(match.group('code_text'))
+            if italic:
+                run.italic = True
+            set_run_font(run, FONT_MONO, font_size)
+            shade_run(run, CODE_SHADE)
+        elif match.group('bold') is not None:
+            emit_formatted_segment(paragraph, match.group('bold_text'), font_name, font_size, True, italic, strike)
+        elif match.group('strike') is not None:
+            emit_formatted_segment(paragraph, match.group('strike_text'), font_name, font_size, bold, italic, True)
+        elif match.group('image') is not None:
+            emit_image_token(paragraph, match.group('image_alt'), match.group('image_url'), font_name, font_size)
+        elif match.group('footnote') is not None:
+            emit_footnote_ref(paragraph, match.group('footnote_id'), font_name, font_size)
+        elif match.group('link') is not None:
+            link_text = strip_emoji(strip_inline_emphasis(match.group('link_text')))
+            add_hyperlink(paragraph, match.group('link_url'), html.unescape(link_text), font_name, font_size)
+        elif match.group('italic_star') is not None:
+            emit_formatted_segment(paragraph, match.group('italic_star_text'), font_name, font_size, bold, True, strike)
+        elif match.group('italic_under') is not None:
+            emit_formatted_segment(paragraph, match.group('italic_under_text'), font_name, font_size, bold, True, strike)
+        elif match.group('bare_url') is not None:
+            url = match.group('bare_url').rstrip(BARE_URL_TRAILING)
+            if url:
+                add_hyperlink(paragraph, url, url, font_name, font_size)
+        pos = match.end()
+    emit_plain_segment(paragraph, text[pos:], font_name, font_size, bold, italic, strike)
+
+
 def set_cell_text(cell, text: str, bold: bool = False):
     cell.text = ''
     p = cell.paragraphs[0]
-    run = p.add_run(text)
-    run.bold = bold
     apply_paragraph_style(p, TABLE_SPEC)
-    set_run_font(run, TABLE_SPEC.font_name, TABLE_SPEC.font_size)
     p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    if bold:
-        run.bold = True
+    add_formatted_runs(p, text, TABLE_SPEC.font_name, TABLE_SPEC.font_size, base_bold=bold)
 
 
 def shade_cell(cell, fill: str):
@@ -2458,7 +3063,7 @@ def collect_markdown_toc_entries(lines: list[str]) -> list[tuple[int, str]]:
         level, content = detected
         if not content or is_explicit_toc_heading(content):
             continue
-        entries.append((level, content))
+        entries.append((level, strip_emoji(content).strip()))
     return entries
 
 
@@ -2539,7 +3144,7 @@ def collect_txt_toc_entries(blocks: list[TxtBlock]) -> list[tuple[int, str]]:
             continue
         if is_explicit_toc_heading(block.title):
             continue
-        entries.append((block.level, block.title))
+        entries.append((block.level, strip_emoji(block.title).strip()))
     return entries
 
 
@@ -2591,8 +3196,13 @@ def render_markdown(
         render_toc(doc, analysis.toc_entries)
 
     heading_base_level = detect_heading_base_level(lines)
+    footnotes, footnote_def_lines = collect_footnote_definitions(lines)
+    ACTIVE_FOOTNOTES.clear()
+    ACTIVE_FOOTNOTES.update(footnotes)
     in_code = False
     code_lines: list[str] = []
+    code_lang: str | None = None
+    ordered_num_id: str | None = None
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -2601,16 +3211,16 @@ def render_markdown(
         if is_fence_line(line):
             if not in_code:
                 in_code = True
+                code_lang = parse_fence_language(line)
                 code_lines = []
             else:
-                p = doc.add_paragraph()
-                for idx, code_line in enumerate(code_lines):
-                    run = p.add_run(code_line)
-                    set_run_font(run, CODE_SPEC.font_name, CODE_SPEC.font_size)
-                    if idx != len(code_lines) - 1:
-                        run.add_break()
-                apply_code_block_style(p)
+                rendered = False
+                if code_lang in MERMAID_LANGUAGES and code_lines:
+                    rendered = render_mermaid_block(doc, '\n'.join(code_lines))
+                if not rendered:
+                    render_code_block(doc, code_lines)
                 in_code = False
+                code_lang = None
                 code_lines = []
             i += 1
             continue
@@ -2620,8 +3230,34 @@ def render_markdown(
             i += 1
             continue
 
+        if not ORDERED_RE.match(line):
+            ordered_num_id = None
+
         if not stripped:
             i += 1
+            continue
+
+        if i in footnote_def_lines:
+            i += 1
+            continue
+
+        if THEMATIC_BREAK_RE.match(line):
+            render_thematic_break(doc)
+            i += 1
+            continue
+
+        if BLOCKQUOTE_RE.match(line):
+            quote_lines: list[str] = []
+            while i < len(lines):
+                quote_match = BLOCKQUOTE_RE.match(lines[i])
+                if not quote_match:
+                    break
+                content = lines[i][quote_match.end():].strip()
+                if content:
+                    quote_lines.append(content)
+                i += 1
+            if quote_lines:
+                render_blockquote(doc, quote_lines)
             continue
 
         if is_table_line(line):
@@ -2630,34 +3266,17 @@ def render_markdown(
             while j < len(lines) and is_table_line(lines[j]):
                 table_lines.append(lines[j])
                 j += 1
+            render_markdown_table(doc, table_lines)
+            i = j
+            continue
 
-            rows = [split_table_row(tl) for tl in table_lines]
-            has_header_sep = len(rows) >= 2 and is_separator_line(table_lines[1])
-            if has_header_sep:
-                header = rows[0]
-                body = rows[2:]
-            else:
-                header = None
-                body = rows
-
-            col_count = max(len(r) for r in ([header] if header else []) + body)
-            table_rows = (1 if header else 0) + max(len(body), 1)
-            table = doc.add_table(rows=table_rows, cols=col_count)
-            table.style = 'Table Grid'
-            set_table_width(table, col_count)
-            row_idx = 0
-            if header:
-                for col, val in enumerate(header):
-                    cell = table.rows[0].cells[col]
-                    set_cell_text(cell, val, bold=True)
-                    shade_cell(cell, TABLE_HEADER_SHADE)
-                row_idx = 1
-            body_rows = body if body else [[]]
-            for row in body_rows:
-                for col in range(col_count):
-                    val = row[col] if col < len(row) else ''
-                    set_cell_text(table.rows[row_idx].cells[col], val, bold=False)
-                row_idx += 1
+        if '|' in stripped and i + 1 < len(lines) and is_loose_table_separator(lines[i + 1]):
+            table_lines = [line, lines[i + 1]]
+            j = i + 2
+            while j < len(lines) and lines[j].strip() and '|' in lines[j] and not is_fence_line(lines[j]):
+                table_lines.append(lines[j])
+                j += 1
+            render_markdown_table(doc, table_lines)
             i = j
             continue
 
@@ -2668,7 +3287,7 @@ def render_markdown(
                 i += 1
                 continue
             p = doc.add_paragraph(style=get_heading_style_id(level))
-            run = p.add_run(content)
+            run = p.add_run(strip_emoji(content).strip())
             spec = get_heading_spec(level)
             set_run_font(run, spec.font_name, spec.font_size)
             apply_paragraph_style(p, spec)
@@ -2679,37 +3298,46 @@ def render_markdown(
         bullet = BULLET_RE.match(line)
         if bullet:
             indent = bullet.group(1)
-            bullet_level = min(len(indent.replace('\t', '    ')) // 2, 2)
+            bullet_level = min(len(indent.replace('\t', '    ')) // 2, MAX_BULLET_LEVEL - 1)
+            content = bullet.group(2).strip()
+            task = TASK_LIST_RE.match(content)
+            task_mark = None
+            if task:
+                task_mark = '☑' if task.group(1).lower() == 'x' else '☐'
+                content = task.group(2)
             p = doc.add_paragraph()
-            run = p.add_run(bullet.group(2).strip())
-            set_run_font(run, BODY_SPEC.font_name, BODY_SPEC.font_size)
             apply_bullet_style(p, bullet_level)
+            if task_mark is not None:
+                mark_run = p.add_run(task_mark + ' ')
+                set_run_font(mark_run, BODY_SPEC.font_name, BODY_SPEC.font_size)
+            add_formatted_runs(p, content, BODY_SPEC.font_name, BODY_SPEC.font_size)
             i += 1
             continue
 
         ordered = ORDERED_RE.match(line)
         if ordered:
-            p = doc.add_paragraph(style='List Number')
-            run = p.add_run(ordered.group(1).strip())
-            set_run_font(run, BODY_SPEC.font_name, BODY_SPEC.font_size)
-            apply_paragraph_style(p, BODY_SPEC)
+            if ordered_num_id is None:
+                numbering = get_numbering_element(doc)
+                ordered_num_id = create_ordered_numbering_instance(numbering) if numbering is not None else None
+            p = doc.add_paragraph()
+            apply_ordered_list_style(p, ordered_num_id)
+            add_formatted_runs(p, ordered.group(1).strip(), BODY_SPEC.font_name, BODY_SPEC.font_size)
             i += 1
             continue
 
         p = doc.add_paragraph()
-        run = p.add_run(line)
-        set_run_font(run, BODY_SPEC.font_name, BODY_SPEC.font_size)
         apply_paragraph_style(p, BODY_SPEC)
+        add_formatted_runs(p, line, BODY_SPEC.font_name, BODY_SPEC.font_size)
         i += 1
 
     if in_code and code_lines:
-        p = doc.add_paragraph()
-        for idx, code_line in enumerate(code_lines):
-            run = p.add_run(code_line)
-            set_run_font(run, CODE_SPEC.font_name, CODE_SPEC.font_size)
-            if idx != len(code_lines) - 1:
-                run.add_break()
-        apply_code_block_style(p)
+        rendered = False
+        if code_lang in MERMAID_LANGUAGES:
+            rendered = render_mermaid_block(doc, '\n'.join(code_lines))
+        if not rendered:
+            render_code_block(doc, code_lines)
+
+    render_footnotes_section(doc, footnotes)
 
 
 def render_txt(
@@ -2738,7 +3366,7 @@ def render_txt(
     for block in blocks:
         if block.kind == 'heading' and block.level is not None and block.title is not None:
             p = doc.add_paragraph(style=get_heading_style_id(block.level))
-            run = p.add_run(normalize_heading_text(block.title))
+            run = p.add_run(strip_emoji(normalize_heading_text(block.title)).strip())
             spec = get_heading_spec(block.level)
             set_run_font(run, spec.font_name, spec.font_size)
             apply_paragraph_style(p, spec)
