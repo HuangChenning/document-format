@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import base64
+import copy
 import hashlib
 import html
+import json
 import re
 import shutil
 import struct
@@ -3452,6 +3454,259 @@ def convert(
     doc.save(output_path)
 
 
+# ---- Style config loading (JSON) ----
+# Lets Word typography (font/size/color/bold/spacing/first-line-indent/alignment
+# per style entry) be overridden at runtime from a JSON file instead of editing
+# the StyleSpec constants above. See skills/word-expert-formatting/config/style.json
+# for the shipped defaults and SKILL.md's "Style matrix" for the generated
+# human-readable view of the same values. Page geometry, bullet marker characters,
+# non-typography colors, and heading-numbering/cover-detection logic are not part
+# of this config and remain hardcoded above and elsewhere in this file.
+
+STYLE_ENTRY_TO_GLOBAL_NAME: dict[str, str] = {
+    'title': 'TITLE_SPEC',
+    'h1': 'H1_SPEC',
+    'h2': 'H2_SPEC',
+    'h3': 'H3_SPEC',
+    'h4': 'H4_SPEC',
+    'h5': 'H5_SPEC',
+    'h6': 'H6_SPEC',
+    'h7': 'H7_SPEC',
+    'h8': 'H8_SPEC',
+    'h9': 'H9_SPEC',
+    'cover_title': 'COVER_TITLE_SPEC',
+    'cover_meta': 'COVER_META_SPEC',
+    'cover_corner': 'COVER_CORNER_SPEC',
+    'body': 'BODY_SPEC',
+    'blockquote': 'BLOCKQUOTE_SPEC',
+    'table': 'TABLE_SPEC',
+    'code': 'CODE_SPEC',
+    'page': 'PAGE_SPEC',
+    'toc_title': 'TOC_TITLE_SPEC',
+    'toc_entry': 'TOC_ENTRY_SPEC',
+}
+
+# Style entries that also have a standalone flat SIZE_* constant read directly
+# by call sites other than their StyleSpec (numbering markers, bullet glyphs,
+# inline code, verification code) — these must be reassigned in lockstep with
+# the StyleSpec's font_size or those call sites would silently keep the old size.
+STYLE_ENTRY_TO_SIZE_GLOBAL_NAME: dict[str, str] = {
+    'title': 'SIZE_TITLE',
+    'h1': 'SIZE_H1',
+    'h2': 'SIZE_H2',
+    'h3': 'SIZE_H3',
+    'h4': 'SIZE_H4',
+    'h5': 'SIZE_H5',
+    'h6': 'SIZE_H6',
+    'h7': 'SIZE_H7',
+    'h8': 'SIZE_H8',
+    'h9': 'SIZE_H9',
+    'body': 'SIZE_BODY',
+    'table': 'SIZE_TABLE',
+    'code': 'SIZE_CODE',
+}
+
+# Named font tokens a style entry's "font" field can reference. Also the flat
+# FONT_* globals read directly by non-StyleSpec call sites (ordered-list and
+# bullet markers, footnote heading, inline code) — reassigned in lockstep.
+DEFAULT_FONT_TOKENS: dict[str, str] = {
+    'song': 'FONT_SONG',
+    'hei': 'FONT_HEI',
+    'mono': 'FONT_MONO',
+}
+
+_ALIGNMENT_TO_STR = {
+    WD_ALIGN_PARAGRAPH.LEFT: 'left',
+    WD_ALIGN_PARAGRAPH.CENTER: 'center',
+    WD_ALIGN_PARAGRAPH.RIGHT: 'right',
+    WD_ALIGN_PARAGRAPH.JUSTIFY: 'justify',
+}
+_STR_TO_ALIGNMENT = {value: key for key, value in _ALIGNMENT_TO_STR.items()}
+
+_KNOWN_STYLE_FIELDS = {
+    'font', 'size_pt', 'color', 'bold', 'line_spacing',
+    'before_pt', 'after_pt', 'first_line_chars', 'alignment',
+}
+_KNOWN_LINE_SPACINGS = {'single', 'one_point_five'}
+
+
+def _style_config_error(path: str, message: str):
+    raise SystemExit(f'Invalid style config: {path} {message}')
+
+
+def _font_token_for(font_name: str) -> str:
+    for token, global_name in DEFAULT_FONT_TOKENS.items():
+        if globals()[global_name] == font_name:
+            return token
+    raise ValueError(f'No font token maps to font name {font_name!r}')
+
+
+def build_default_style_config() -> dict:
+    """Build the JSON-able default config by reading back the hardcoded
+    StyleSpec instances defined above, so the config default can never drift
+    out of sync with the code default (both come from the same source)."""
+    fonts = {token: globals()[global_name] for token, global_name in DEFAULT_FONT_TOKENS.items()}
+    styles: dict[str, dict] = {}
+    for entry_id, global_name in STYLE_ENTRY_TO_GLOBAL_NAME.items():
+        spec: StyleSpec = globals()[global_name]
+        styles[entry_id] = {
+            'font': _font_token_for(spec.font_name),
+            'size_pt': spec.font_size.pt,
+            'color': spec.font_color,
+            'bold': spec.bold,
+            'line_spacing': spec.line_spacing,
+            'before_pt': spec.before_pt,
+            'after_pt': spec.after_pt,
+            'first_line_chars': spec.first_line_chars,
+            'alignment': _ALIGNMENT_TO_STR[spec.alignment],
+        }
+    return {'fonts': fonts, 'styles': styles}
+
+
+def load_style_config_file(path: Path) -> dict:
+    try:
+        text = path.read_text(encoding='utf-8')
+    except OSError as exc:
+        raise SystemExit(f'Cannot read style config {path}: {exc}') from exc
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f'Invalid style config {path}: not valid JSON ({exc})') from exc
+
+
+def validate_style_config(raw: dict) -> None:
+    if not isinstance(raw, dict):
+        _style_config_error('(root)', 'must be a JSON object')
+
+    unknown_top = set(raw) - {'fonts', 'styles'}
+    if unknown_top:
+        _style_config_error('(root)', f'has unknown key(s): {sorted(unknown_top)}; only "fonts" and "styles" are allowed')
+
+    fonts = raw.get('fonts', {})
+    if not isinstance(fonts, dict):
+        _style_config_error('fonts', 'must be an object')
+    for token, name in fonts.items():
+        if not isinstance(token, str) or not isinstance(name, str) or not name:
+            _style_config_error(f'fonts.{token}', 'must map a string token to a non-empty font name string')
+
+    styles = raw.get('styles', {})
+    if not isinstance(styles, dict):
+        _style_config_error('styles', 'must be an object')
+
+    for entry_id, entry in styles.items():
+        if entry_id not in STYLE_ENTRY_TO_GLOBAL_NAME:
+            _style_config_error(f'styles.{entry_id}', f'is not a known style id; expected one of {sorted(STYLE_ENTRY_TO_GLOBAL_NAME)}')
+        if not isinstance(entry, dict):
+            _style_config_error(f'styles.{entry_id}', 'must be an object')
+
+        unknown_fields = set(entry) - _KNOWN_STYLE_FIELDS
+        if unknown_fields:
+            _style_config_error(f'styles.{entry_id}', f'has unknown field(s): {sorted(unknown_fields)}')
+
+        if 'font' in entry and not isinstance(entry['font'], str):
+            _style_config_error(f'styles.{entry_id}.font', 'must be a string font token')
+        if 'size_pt' in entry:
+            size_pt = entry['size_pt']
+            if isinstance(size_pt, bool) or not isinstance(size_pt, (int, float)) or size_pt <= 0:
+                _style_config_error(f'styles.{entry_id}.size_pt', 'must be a positive number')
+        if 'color' in entry and entry['color'] is not None:
+            color = entry['color']
+            if not isinstance(color, str) or not re.fullmatch(r'[0-9A-Fa-f]{6}', color):
+                _style_config_error(f'styles.{entry_id}.color', 'must be a 6-hex-digit string (e.g. "1F4E79") or null')
+        if 'bold' in entry and entry['bold'] is not None and not isinstance(entry['bold'], bool):
+            _style_config_error(f'styles.{entry_id}.bold', 'must be true, false, or null')
+        if 'line_spacing' in entry and entry['line_spacing'] not in _KNOWN_LINE_SPACINGS:
+            _style_config_error(f'styles.{entry_id}.line_spacing', f'must be one of {sorted(_KNOWN_LINE_SPACINGS)}')
+        for field in ('before_pt', 'after_pt'):
+            if field in entry:
+                value = entry[field]
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                    _style_config_error(f'styles.{entry_id}.{field}', 'must be a number >= 0')
+        if 'first_line_chars' in entry:
+            value = entry['first_line_chars']
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                _style_config_error(f'styles.{entry_id}.first_line_chars', 'must be an integer >= 0')
+        if 'alignment' in entry and entry['alignment'] not in _STR_TO_ALIGNMENT:
+            _style_config_error(f'styles.{entry_id}.alignment', f'must be one of {sorted(_STR_TO_ALIGNMENT)}')
+
+
+def deep_merge_style_config(base: dict, override: dict) -> dict:
+    """Merge `override` onto `base` without mutating either. A style entry in
+    `override` only needs to specify the fields it wants to change; unspecified
+    fields keep the corresponding value from `base`."""
+    merged = copy.deepcopy(base)
+    merged.setdefault('fonts', {}).update(override.get('fonts', {}))
+    merged_styles = merged.setdefault('styles', {})
+    for entry_id, entry_override in override.get('styles', {}).items():
+        merged_styles.setdefault(entry_id, {}).update(entry_override)
+    return merged
+
+
+def resolve_style_specs(config: dict) -> dict[str, StyleSpec]:
+    """Pure: build fresh StyleSpec objects from a fully-merged config dict.
+    Never touches module globals, so it is safe to call from tests without
+    mutating process-wide state."""
+    fonts = config.get('fonts', {})
+    specs: dict[str, StyleSpec] = {}
+    for entry_id, global_name in STYLE_ENTRY_TO_GLOBAL_NAME.items():
+        entry = config.get('styles', {}).get(entry_id, {})
+        font_token = entry.get('font')
+        if font_token not in fonts:
+            raise SystemExit(
+                f'Invalid style config: styles.{entry_id}.font references unknown font token {font_token!r}; '
+                f'known tokens: {sorted(fonts)}'
+            )
+        specs[global_name] = StyleSpec(
+            font_name=fonts[font_token],
+            font_size=Pt(entry['size_pt']),
+            line_spacing=entry['line_spacing'],
+            before_pt=entry['before_pt'],
+            after_pt=entry['after_pt'],
+            first_line_chars=entry.get('first_line_chars', 0),
+            bold=entry.get('bold'),
+            alignment=_STR_TO_ALIGNMENT[entry['alignment']],
+            font_color=entry.get('color'),
+        )
+    return specs
+
+
+def apply_style_config_to_globals(config: dict) -> None:
+    """The one function with side effects: reassigns the module-level style
+    globals (H1_SPEC, FONT_HEI, SIZE_H1, ...) so every existing call site that
+    reads them by name picks up the resolved config on its next read."""
+    fonts = config.get('fonts', {})
+    for token, global_name in DEFAULT_FONT_TOKENS.items():
+        if token in fonts:
+            globals()[global_name] = fonts[token]
+
+    specs = resolve_style_specs(config)
+    for entry_id, global_name in STYLE_ENTRY_TO_GLOBAL_NAME.items():
+        spec = specs[global_name]
+        globals()[global_name] = spec
+        size_global_name = STYLE_ENTRY_TO_SIZE_GLOBAL_NAME.get(entry_id)
+        if size_global_name:
+            globals()[size_global_name] = spec.font_size
+
+
+def load_and_apply_style_config(explicit_path: str | None) -> None:
+    """Resolve a style config path, then validate/merge/apply it. With no
+    explicit path and no default sibling config file present, this is a no-op
+    and the hardcoded StyleSpec defaults stand unchanged."""
+    if explicit_path is not None:
+        path = Path(explicit_path).expanduser().resolve()
+        if not path.is_file():
+            raise SystemExit(f'--style-config path not found: {path}')
+    else:
+        path = _SCRIPT_DIR.parent / 'config' / 'style.json'
+        if not path.is_file():
+            return
+
+    raw = load_style_config_file(path)
+    validate_style_config(raw)
+    merged = deep_merge_style_config(build_default_style_config(), raw)
+    apply_style_config_to_globals(merged)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Convert Markdown, TXT, or DOCX to formatted DOCX.')
     parser.add_argument('input', help='Input .md, .markdown, .txt, or .docx file')
@@ -3463,6 +3718,7 @@ def parse_args():
     parser.add_argument('--cover-text', help='Explicit cover text. The first non-empty line is used as the title and later lines are rendered as centered metadata')
     parser.add_argument('--with-toc', dest='force_toc', action='store_const', const=True, default=None, help='Always request generated TOC insertion when no explicit TOC heading exists')
     parser.add_argument('--without-toc', dest='force_toc', action='store_const', const=False, help='Never insert a generated TOC page')
+    parser.add_argument('--style-config', dest='style_config', default=None, help='Path to a JSON file overriding default Word typography (see skills/word-expert-formatting/config/style.json for defaults and schema)')
     return parser.parse_args()
 
 
@@ -3498,6 +3754,8 @@ def main():
         force_cover = True
     else:
         force_cover = args.force_cover
+
+    load_and_apply_style_config(args.style_config)
 
     convert(
         input_path,

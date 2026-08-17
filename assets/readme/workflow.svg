@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="490" viewBox="0 0 1200 490"
+     role="img" aria-labelledby="wf-title wf-desc">
+  <title id="wf-title">text_to_docx.py workflow</title>
+  <desc id="wf-desc">Two entry paths feed one script: new Markdown or TXT content is generated into a fresh formal .docx with optional cover and TOC, while an existing .docx is refreshed into a .refreshed.docx that preserves its structure. Both paths share heading numbering, cover and TOC handling, style mapping, refresh mode, and verification.</desc>
+
+  <rect width="1200" height="490" rx="20" fill="#F6F3EC"/>
+
+  <text x="64" y="50" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#8B8577">text_to_docx.py — two entry paths, one formatting contract</text>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
+    <text x="64" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#8B8577">NEW CONTENT</text>
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+      <rect x="64" y="124" width="48" height="26" rx="13" fill="#EFEAE0" stroke="#8B8577" stroke-width="1"/>
+      <text x="88" y="142" font-size="14" fill="#4A473F" text-anchor="middle">.md</text>
+      <rect x="120" y="124" width="54" height="26" rx="13" fill="#EFEAE0" stroke="#8B8577" stroke-width="1"/>
+      <text x="147" y="142" font-size="14" fill="#4A473F" text-anchor="middle">.txt</text>
+    </g>
+    <path d="M 182 145 L 310 160 M 298 152 L 310 160 L 300 168" fill="none" stroke="#8B8577" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <text x="64" y="354" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#8B8577">EXISTING DOCUMENT</text>
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+      <rect x="64" y="366" width="64" height="26" rx="13" fill="#EFEAE0" stroke="#8B8577" stroke-width="1"/>
+      <text x="96" y="384" font-size="14" fill="#4A473F" text-anchor="middle">.docx</text>
+    </g>
+    <path d="M 128 379 L 308 361 M 297 355 L 308 361 L 299 370" fill="none" stroke="#8B8577" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g id="engine">
+    <rect x="320" y="90" width="440" height="310" rx="16" fill="#FFFFFF" stroke="#24365C" stroke-width="1.5"/>
+    <text x="346" y="132" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="25" font-weight="700" fill="#24365C">text_to_docx.py</text>
+    <line x1="346" y1="148" x2="726" y2="148" stroke="#8B8577" stroke-width="1" opacity="0.3"/>
+
+    <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif" font-size="17" fill="#2A2A26">
+      <circle cx="354" cy="176" r="4" fill="#24365C"/>
+      <text x="370" y="182">Heading numbers — 1 / 1.1 / 1.1.1</text>
+
+      <circle cx="354" cy="216" r="4" fill="#24365C"/>
+      <text x="370" y="222">Cover &amp; TOC — auto-detect or explicit</text>
+
+      <circle cx="354" cy="256" r="4" fill="#24365C"/>
+      <text x="370" y="262">Style mapping — headings &amp; tables</text>
+
+      <circle cx="354" cy="296" r="4" fill="#A63A2E"/>
+      <text x="370" y="302">Refresh mode — structure preserved</text>
+
+      <circle cx="354" cy="336" r="4" fill="#A63A2E"/>
+      <text x="370" y="342">Verification — cover, TOC &amp; structure</text>
+    </g>
+  </g>
+
+  <path d="M 760 160 L 796 160 M 786 152 L 796 160 L 786 168" fill="none" stroke="#8B8577" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 760 360 L 796 360 M 786 352 L 796 360 L 786 368" fill="none" stroke="#8B8577" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g id="output-new">
+    <rect x="800" y="85" width="130" height="150" rx="10" fill="#FFFFFF" stroke="#24365C" stroke-width="1.3"/>
+    <circle cx="912" cy="100" r="6" fill="#A63A2E" opacity="0.92"/>
+    <rect x="814" y="110" width="54" height="6" rx="3" fill="#24365C"/>
+    <rect x="814" y="124" width="64" height="5" rx="2.5" fill="#24365C"/>
+    <rect x="824" y="136" width="50" height="4" rx="2" fill="#24365C" opacity="0.8"/>
+    <rect x="834" y="147" width="40" height="4" rx="2" fill="#24365C" opacity="0.6"/>
+    <g fill="#2A2A26" opacity="0.3">
+      <rect x="814" y="162" width="100" height="3" rx="1.5"/>
+      <rect x="814" y="172" width="100" height="3" rx="1.5"/>
+      <rect x="814" y="182" width="100" height="3" rx="1.5"/>
+      <rect x="814" y="192" width="66" height="3" rx="1.5"/>
+    </g>
+    <line x1="814" y1="210" x2="914" y2="210" stroke="#8B8577" stroke-width="1" opacity="0.4"/>
+    <text x="864" y="222" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9" fill="#8B8577" text-anchor="middle">1</text>
+
+    <text x="865" y="258" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="700" fill="#24365C" text-anchor="middle">.docx</text>
+    <text x="865" y="275" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#8B8577" text-anchor="middle">cover + TOC optional</text>
+  </g>
+
+  <g id="output-refresh">
+    <rect x="800" y="285" width="130" height="150" rx="10" fill="#FFFFFF" stroke="#24365C" stroke-width="1.3"/>
+    <path d="M 907 292 A 7 7 0 1 1 905 306" fill="none" stroke="#A63A2E" stroke-width="1.6"/>
+    <path d="M 903 302 L 905 306 L 909 303" fill="none" stroke="#A63A2E" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="814" y="310" width="54" height="6" rx="3" fill="#24365C"/>
+    <rect x="814" y="324" width="64" height="5" rx="2.5" fill="#24365C"/>
+    <rect x="824" y="336" width="50" height="4" rx="2" fill="#24365C" opacity="0.8"/>
+    <rect x="834" y="347" width="40" height="4" rx="2" fill="#24365C" opacity="0.6"/>
+    <g fill="#2A2A26" opacity="0.3">
+      <rect x="814" y="362" width="100" height="3" rx="1.5"/>
+      <rect x="814" y="372" width="100" height="3" rx="1.5"/>
+      <rect x="814" y="382" width="100" height="3" rx="1.5"/>
+      <rect x="814" y="392" width="66" height="3" rx="1.5"/>
+    </g>
+    <line x1="814" y1="410" x2="914" y2="410" stroke="#8B8577" stroke-width="1" opacity="0.4"/>
+    <text x="864" y="422" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9" fill="#8B8577" text-anchor="middle">1</text>
+
+    <text x="865" y="458" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" fill="#24365C" text-anchor="middle">.refreshed.docx</text>
+    <text x="865" y="475" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#8B8577" text-anchor="middle">structure preserved</text>
+  </g>
+</svg>
