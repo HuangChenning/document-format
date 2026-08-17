@@ -1,0 +1,229 @@
+{
+  "fonts": {
+    "song": "宋体",
+    "hei": "黑体",
+    "mono": "Menlo"
+  },
+  "styles": {
+    "title": {
+      "font": "hei",
+      "size_pt": 28.0,
+      "color": "000000",
+      "bold": true,
+      "line_spacing": "single",
+      "before_pt": 10,
+      "after_pt": 10,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "h1": {
+      "font": "hei",
+      "size_pt": 16.0,
+      "color": "000000",
+      "bold": true,
+      "line_spacing": "single",
+      "before_pt": 10,
+      "after_pt": 10,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "h2": {
+      "font": "hei",
+      "size_pt": 15.0,
+      "color": "000000",
+      "bold": true,
+      "line_spacing": "single",
+      "before_pt": 8,
+      "after_pt": 8,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "h3": {
+      "font": "hei",
+      "size_pt": 14.0,
+      "color": "000000",
+      "bold": true,
+      "line_spacing": "one_point_five",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "h4": {
+      "font": "hei",
+      "size_pt": 12.0,
+      "color": "000000",
+      "bold": true,
+      "line_spacing": "one_point_five",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "h5": {
+      "font": "hei",
+      "size_pt": 12.0,
+      "color": "000000",
+      "bold": true,
+      "line_spacing": "one_point_five",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "h6": {
+      "font": "hei",
+      "size_pt": 12.0,
+      "color": "000000",
+      "bold": true,
+      "line_spacing": "one_point_five",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "h7": {
+      "font": "hei",
+      "size_pt": 12.0,
+      "color": "000000",
+      "bold": true,
+      "line_spacing": "one_point_five",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "h8": {
+      "font": "hei",
+      "size_pt": 12.0,
+      "color": "000000",
+      "bold": true,
+      "line_spacing": "one_point_five",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "h9": {
+      "font": "hei",
+      "size_pt": 12.0,
+      "color": "000000",
+      "bold": true,
+      "line_spacing": "one_point_five",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "cover_title": {
+      "font": "song",
+      "size_pt": 22.0,
+      "color": "000000",
+      "bold": true,
+      "line_spacing": "one_point_five",
+      "before_pt": 9,
+      "after_pt": 9,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "cover_meta": {
+      "font": "song",
+      "size_pt": 14.0,
+      "color": null,
+      "bold": null,
+      "line_spacing": "one_point_five",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "cover_corner": {
+      "font": "hei",
+      "size_pt": 10.5,
+      "color": null,
+      "bold": false,
+      "line_spacing": "single",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "body": {
+      "font": "song",
+      "size_pt": 12.0,
+      "color": null,
+      "bold": null,
+      "line_spacing": "one_point_five",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 2,
+      "alignment": "justify"
+    },
+    "blockquote": {
+      "font": "song",
+      "size_pt": 12.0,
+      "color": null,
+      "bold": null,
+      "line_spacing": "one_point_five",
+      "before_pt": 3,
+      "after_pt": 3,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "table": {
+      "font": "song",
+      "size_pt": 10.5,
+      "color": null,
+      "bold": null,
+      "line_spacing": "one_point_five",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "code": {
+      "font": "mono",
+      "size_pt": 9.0,
+      "color": null,
+      "bold": null,
+      "line_spacing": "one_point_five",
+      "before_pt": 6,
+      "after_pt": 6,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "page": {
+      "font": "song",
+      "size_pt": 10.5,
+      "color": null,
+      "bold": null,
+      "line_spacing": "one_point_five",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "toc_title": {
+      "font": "hei",
+      "size_pt": 16.0,
+      "color": "000000",
+      "bold": true,
+      "line_spacing": "single",
+      "before_pt": 10,
+      "after_pt": 10,
+      "first_line_chars": 0,
+      "alignment": "left"
+    },
+    "toc_entry": {
+      "font": "song",
+      "size_pt": 12.0,
+      "color": null,
+      "bold": null,
+      "line_spacing": "one_point_five",
+      "before_pt": 0,
+      "after_pt": 0,
+      "first_line_chars": 0,
+      "alignment": "left"
+    }
+  }
+}

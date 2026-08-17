@@ -1,10 +1,95 @@
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%"
+       alt="document-format: the word-expert-formatting Claude Code skill turning Markdown, TXT, or an existing .docx into a spec-compliant Chinese formal Word document">
+</p>
+
 # document-format
 
-This repository documents the skills under `skills/`.
-
-At the moment, the primary skill is `skills/word-expert-formatting`, a custom Claude Code skill for formatting Chinese Word content and supporting local `.docx` generation from Markdown or plain text, plus refreshed-copy normalization and verification for existing `.docx` files.
+This repository documents the skills under `skills/`. The primary skill, `skills/word-expert-formatting`, is a custom Claude Code skill that formats Chinese Word content and turns Markdown or plain text into a `.docx` locally — or normalizes and verifies a refreshed copy of an existing `.docx`.
 
 It applies all-decimal heading numbering, and `--auto-toc` inserts a Word TOC field instead of static TOC text.
+
+## Quick start
+
+Requirements:
+- Python 3
+- `python-docx`
+
+```bash
+python3 -m pip install python-docx
+```
+
+The script checks these at startup and exits with a clear error message if a required dependency is missing. Output documents are created from a blank Word document, so this workflow does not depend on a local template `.docx` file.
+
+Reference: `skills/word-expert-formatting/scripts/text_to_docx.py:3151`
+
+Run:
+
+```bash
+python3 skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc] [--style-config <path>]
+```
+
+If `output.docx` is omitted, `.md` / `.markdown` / `.txt` inputs still write a same-basename `.docx`, while `.docx` inputs write `<stem>.refreshed.docx` next to the source file.
+
+<p align="center">
+  <img src="./assets/readme/workflow.svg" width="100%"
+       alt="text_to_docx.py takes two entry paths: new Markdown or TXT content is generated into a fresh .docx with optional cover and TOC, and an existing .docx is refreshed into a .refreshed.docx that preserves its structure">
+</p>
+
+For skill-driven runs in this repository, ask first:
+1. whether to generate a cover page
+2. if yes, what cover text to use (manual input; default empty)
+3. whether to generate a TOC page
+
+The skill treats those answers as explicit per-run decisions:
+- generate cover + non-empty text: render the first non-empty line as the cover title and later non-empty lines as centered metadata
+- generate cover + empty text: render a blank placeholder cover page
+- do not generate cover: suppress automatic cover detection and placeholder insertion for that run; for an existing `.docx`, this also means the existing cover region is fully frozen and no cover-region formatting, section, footer, or page-number changes are allowed
+- TOC generation is asked every time and then mapped to the script invocation for that run; when the existing cover region is frozen, TOC handling must stay after the detected body boundary
+
+References:
+- `skills/word-expert-formatting/SKILL.md:127`
+- `skills/word-expert-formatting/scripts/text_to_docx.py:2634`
+
+### What the script does
+
+The script currently:
+- accepts `.md`, `.markdown`, `.txt`, and `.docx`
+- formats headings, paragraphs, lists, tables, code blocks, footer page numbers, and simple cover sections
+- renders Markdown inline emphasis (bold / italic / inline code / strikethrough), hyperlinks, task lists, blockquotes, and footnotes
+- embeds local `![alt](path)` images with page-fit sizing and renders `mermaid` fenced blocks to images (local mmdc, then draw.io CLI, then mermaid.ink, finally falls back to a code block)
+- strips emoji from rendered text automatically while keeping code blocks and inline code verbatim
+- uses all-decimal heading numbering
+- can reserve a placeholder cover page when no cover is detected
+- can generate a Word TOC field page when no explicit TOC heading is detected
+- can take explicit cover / TOC decisions for a run, including manual cover text input
+- loads per-level typography (font, size, color, bold, spacing, alignment) from an optional JSON config file instead of using the built-in defaults
+- refreshes existing `.docx` files into a new output file instead of deleting and rebuilding the body
+- preserves images, tables, page breaks, and section structure during existing `.docx` refresh
+- fully freezes the existing cover region when `--without-cover` is chosen for an existing `.docx`, and only normalizes content after the detected body boundary
+- still allows explicit TOC decisions during existing `.docx` refresh without letting TOC handling modify the frozen cover region
+- uses a more formal pagination model when a cover page exists for generated output or for existing `.docx` runs that are not in frozen-cover mode: the cover has no page number and the body section restarts numbering from 1
+- writes a `.docx` file
+
+Reference: `skills/word-expert-formatting/scripts/text_to_docx.py:840`
+
+### Style configuration
+
+Font, size, color, bold, line spacing, spacing before/after, first-line indent, and alignment for each of the 20 style entries (title, headings 1–9, cover title/meta/corner, body, blockquote, table, code, footer, TOC title/entry) can be overridden without touching Python code.
+
+By default the script looks for `skills/word-expert-formatting/config/style.json` next to itself; if that file is absent, the built-in hardcoded defaults apply unchanged. Pass `--style-config <path>` to use a different file, or to require one explicitly (an explicit path that doesn't exist is an error). A config file only needs to specify the fields it wants to change — everything else is deep-merged onto the defaults:
+
+```json
+{"styles": {"h1": {"color": "1F4E79", "size_pt": 20}}}
+```
+
+The shipped `config/style.json` mirrors the current hardcoded values exactly, and `skills/word-expert-formatting/SKILL.md`'s "Style matrix" table is generated from it — run `python3 skills/word-expert-formatting/scripts/generate_style_doc.py` after editing the config to refresh that table (`--check` verifies it's already in sync).
+
+Page geometry, bullet marker characters, non-typography colors, and heading-numbering/cover-detection logic are not part of this config and stay hardcoded in `text_to_docx.py`; the `cover_title`/`cover_meta`/`cover_corner`/`toc_title` entries also ignore the `alignment` field since their alignment is set explicitly in code.
+
+References:
+- `skills/word-expert-formatting/config/style.json`
+- `skills/word-expert-formatting/scripts/text_to_docx.py:3691`
 
 ## Skills
 
@@ -38,70 +123,6 @@ Reference: `skills/word-expert-formatting/SKILL.md:1`
 
 Reference: `skills/word-expert-formatting/SKILL.md:27`
 
-## Local DOCX workflow
-
-The local implementation lives in:
-
-`skills/word-expert-formatting/scripts/text_to_docx.py`
-
-The script currently:
-- accepts `.md`, `.markdown`, `.txt`, and `.docx`
-- formats headings, paragraphs, lists, tables, code blocks, footer page numbers, and simple cover sections
-- renders Markdown inline emphasis (bold / italic / inline code / strikethrough), hyperlinks, task lists, blockquotes, and footnotes
-- embeds local `![alt](path)` images with page-fit sizing and renders `mermaid` fenced blocks to images (local mmdc, then draw.io CLI, then mermaid.ink, finally falls back to a code block)
-- strips emoji from rendered text automatically while keeping code blocks and inline code verbatim
-- uses all-decimal heading numbering
-- can reserve a placeholder cover page when no cover is detected
-- can generate a Word TOC field page when no explicit TOC heading is detected
-- can take explicit cover / TOC decisions for a run, including manual cover text input
-- refreshes existing `.docx` files into a new output file instead of deleting and rebuilding the body
-- preserves images, tables, page breaks, and section structure during existing `.docx` refresh
-- fully freezes the existing cover region when `--without-cover` is chosen for an existing `.docx`, and only normalizes content after the detected body boundary
-- still allows explicit TOC decisions during existing `.docx` refresh without letting TOC handling modify the frozen cover region
-- uses a more formal pagination model when a cover page exists for generated output or for existing `.docx` runs that are not in frozen-cover mode: the cover has no page number and the body section restarts numbering from 1
-- writes a `.docx` file
-
-Reference: `skills/word-expert-formatting/scripts/text_to_docx.py:840`
-
-Run:
-
-```bash
-python3 skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
-```
-
-If `output.docx` is omitted, `.md` / `.markdown` / `.txt` inputs still write a same-basename `.docx`, while `.docx` inputs write `<stem>.refreshed.docx` next to the source file.
-
-For skill-driven runs in this repository, ask first:
-1. whether to generate a cover page
-2. if yes, what cover text to use (manual input; default empty)
-3. whether to generate a TOC page
-
-The skill now treats those answers as explicit per-run decisions:
-- generate cover + non-empty text: render the first non-empty line as the cover title and later non-empty lines as centered metadata
-- generate cover + empty text: render a blank placeholder cover page
-- do not generate cover: suppress automatic cover detection and placeholder insertion for that run; for an existing `.docx`, this also means the existing cover region is fully frozen and no cover-region formatting, section, footer, or page-number changes are allowed
-- TOC generation is asked every time and then mapped to the script invocation for that run; when the existing cover region is frozen, TOC handling must stay after the detected body boundary
-
-References:
-- `skills/word-expert-formatting/SKILL.md:127`
-- `skills/word-expert-formatting/scripts/text_to_docx.py:1163`
-
-## Before use
-
-Before using the local DOCX workflow, check:
-- Python 3 is available
-- `python-docx` is installed
-
-The script now performs these checks at startup and exits with a clear error message if a required dependency is missing.
-The output document is now created from a blank Word document, so the workflow does not depend on a local template `.docx` file.
-
-## Requirements
-
-- Python 3
-- `python-docx`
-
-Reference: `skills/word-expert-formatting/scripts/text_to_docx.py:8`
-
 ## Supported features
 
 Current script support includes:
@@ -127,6 +148,7 @@ Current script support includes:
 - existing `.docx` verification for cover, TOC, body layout, tables, numbering, and structure counts
 - TXT paragraph blocks
 - minimal TXT heading detection for TOC generation
+- per-level typography overrides via `--style-config <path>` or a default `config/style.json`, deep-merged onto built-in defaults
 
 References:
 - `skills/word-expert-formatting/scripts/text_to_docx.py:695`
@@ -179,8 +201,16 @@ When a cover page is present or `--reserve-cover` / `--with-cover` is used, the 
 
 References:
 - `skills/word-expert-formatting/SKILL.md:43`
-- `skills/word-expert-formatting/scripts/text_to_docx.py:336`
-- `skills/word-expert-formatting/scripts/text_to_docx.py:605`
+- `skills/word-expert-formatting/scripts/text_to_docx.py:3455`
+- `skills/word-expert-formatting/scripts/text_to_docx.py:309`
+
+## Limitations
+
+- complex embedded HTML, remote images (rendered as placeholders), and highly customized layouts are not supported yet
+- `mermaid` fenced blocks need at least one working renderer (local `mmdc`, the draw.io CLI, or network access to `mermaid.ink`); if none are available, the block falls back to a plain code block instead of an image
+- `SKILL.md` is a human-readable contract, not a config file the script parses — a formatting-rule change must be made in both `SKILL.md` and `text_to_docx.py` to actually affect output
+
+Reference: `skills/word-expert-formatting/SKILL.md:327`
 
 ## Maintenance rule
 

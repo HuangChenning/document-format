@@ -1,10 +1,95 @@
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%"
+       alt="document-format：word-expert-formatting 这个 Claude Code skill，把 Markdown、TXT 或已有 .docx 转换成符合规范的中文正式 Word 文档">
+</p>
+
 # document-format
 
-这个仓库的 README 只描述 `skills/` 目录下的技能。
-
-当前主要技能是 `skills/word-expert-formatting`，它是一个自定义 Claude Code skill，用于格式化中文 Word 内容，并支持把 Markdown 或纯文本本地生成 `.docx`，以及对已有 `.docx` 生成刷新副本并核查。
+这个仓库的 README 只描述 `skills/` 目录下的技能。当前主要技能是 `skills/word-expert-formatting`，它是一个自定义 Claude Code skill，用于格式化中文 Word 内容，并支持把 Markdown 或纯文本本地生成 `.docx`，以及对已有 `.docx` 生成刷新副本并核查。
 
 它使用纯十进制标题编号，并且 `--auto-toc` 会插入 Word 动态目录域，而不是静态目录文本。
+
+## 快速开始
+
+运行依赖：
+- Python 3
+- `python-docx`
+
+```bash
+python3 -m pip install python-docx
+```
+
+脚本会在启动时主动执行这些检查；如果依赖缺失，会直接给出清晰错误信息并退出。现在输出文档会从空白 Word 文档直接创建，因此该工作流不再依赖本地模板 `.docx` 文件。
+
+参考：`skills/word-expert-formatting/scripts/text_to_docx.py:3151`
+
+执行方式：
+
+```bash
+python3 skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc] [--style-config <path>]
+```
+
+如果省略 `output.docx`，`.md` / `.markdown` / `.txt` 输入仍会生成同名 `.docx`，而 `.docx` 输入会在源文件旁边生成 `<stem>.refreshed.docx`。
+
+<p align="center">
+  <img src="./assets/readme/workflow.svg" width="100%"
+       alt="text_to_docx.py 的两条入口路径：新的 Markdown 或 TXT 内容会生成带可选首页与目录的全新 .docx，已有 .docx 会被刷新为保留原结构的 .refreshed.docx">
+</p>
+
+在本仓库通过 skill 驱动本地 DOCX 工作流时，应先询问：
+1. 是否生成首页
+2. 如果生成首页，首页文字内容是什么（手动输入；默认空）
+3. 是否生成目录页
+
+skill 会把这些回答当作本次运行的显式决策：
+- 生成首页 + 输入非空文字：把第一条非空行渲染为首页标题，后续非空行渲染为居中的公司名 / 日期等元信息
+- 生成首页 + 文字为空：生成空白占位首页
+- 不生成首页：本次运行同时关闭自动封面识别与占位封面插入；对已有 `.docx`，这也意味着现有首页区域会被完全冻结，不允许任何首页区域格式、section、footer 或页码改动
+- 目录是否生成：每次都询问，再映射为本次脚本调用参数；当首页区域被冻结时，目录处理必须限制在检测到的正文边界之后
+
+参考：
+- `skills/word-expert-formatting/SKILL.md:127`
+- `skills/word-expert-formatting/scripts/text_to_docx.py:2634`
+
+### 脚本当前会做什么
+
+脚本当前会：
+- 接收 `.md`、`.markdown`、`.txt` 和 `.docx`
+- 处理标题、段落、列表、表格、代码块、页脚页码和简单封面
+- 渲染 Markdown 行内强调（加粗/斜体/行内代码/删除线）、超链接、任务列表、引用块与脚注
+- 嵌入本地 `![alt](path)` 图片（按页宽/页高自适应缩放），并将 `mermaid` 代码块渲染为图片（本地 mmdc → draw.io CLI → mermaid.ink → 回退代码块）
+- 自动剥离正文中的 emoji（代码块与行内代码原样保留）
+- 使用纯十进制标题编号
+- 在未检测到封面时，可通过 `--reserve-cover` 预留封面页
+- 在未检测到显式目录标题时，可通过 `--auto-toc` 插入 Word 动态目录页
+- 支持按单次运行显式指定首页 / 目录决策，并支持手动输入首页文字
+- 从可选的 JSON 配置文件加载每级样式的字体、字号、颜色、加粗、间距、对齐，而不是使用内置默认值
+- 对已有 `.docx` 生成新的刷新输出文件，而不是删除正文后重建
+- 在已有 `.docx` 刷新时保留图片、表格、分页和 section 结构
+- 当对已有 `.docx` 选择 `--without-cover` 时，会把现有首页区域完全冻结，并且只处理检测到的正文边界之后的内容
+- 在已有 `.docx` 刷新时仍支持显式目录决策，但目录处理不得回流修改已冻结的首页区域
+- 对生成型输出，或未进入首页冻结模式的已有 `.docx`，当存在封面页时使用更正式的分页模型：封面无页码，正文节从 1 开始重新编号
+- 输出 `.docx` 文件
+
+参考：`skills/word-expert-formatting/scripts/text_to_docx.py:840`
+
+### 样式配置
+
+每个样式条目(标题、一至九级标题、封面标题/元信息/角标、正文、引用块、表格、代码、页脚、目录标题/条目，共 20 个)的字体、字号、颜色、加粗、行距、段前段后、首行缩进、对齐，都可以不改 Python 代码直接调整。
+
+脚本默认会在自己旁边找 `skills/word-expert-formatting/config/style.json`；如果这个文件不存在，就直接用内置的硬编码默认值，行为不变。用 `--style-config <path>` 可以指定另一个文件，或者强制要求必须存在（显式传入但文件不存在时会报错）。配置文件只需要写想改的字段，其余字段会合并（deep merge）内置默认值：
+
+```json
+{"styles": {"h1": {"color": "1F4E79", "size_pt": 20}}}
+```
+
+随包提供的 `config/style.json` 内容和现有硬编码值逐字段一致，`skills/word-expert-formatting/SKILL.md` 里的"Style matrix"表就是从它生成的——改完配置后运行 `python3 skills/word-expert-formatting/scripts/generate_style_doc.py` 重新生成表格（加 `--check` 可以只检查是否已经同步，不写文件）。
+
+页面几何、项目符号字符、非排版颜色、标题编号方案与封面/目录识别逻辑不在这份配置里，仍然硬编码在 `text_to_docx.py` 里；`cover_title`/`cover_meta`/`cover_corner`/`toc_title` 这四个条目的 `alignment` 字段配置了也不会生效，因为它们的对齐方式在代码里被显式设置。
+
+参考：
+- `skills/word-expert-formatting/config/style.json`
+- `skills/word-expert-formatting/scripts/text_to_docx.py:3691`
 
 ## 技能列表
 
@@ -38,70 +123,6 @@
 
 参考：`skills/word-expert-formatting/SKILL.md:27`
 
-## 本地 DOCX 工作流
-
-本地实现位于：
-
-`skills/word-expert-formatting/scripts/text_to_docx.py`
-
-脚本当前会：
-- 接收 `.md`、`.markdown`、`.txt` 和 `.docx`
-- 处理标题、段落、列表、表格、代码块、页脚页码和简单封面
-- 渲染 Markdown 行内强调（加粗/斜体/行内代码/删除线）、超链接、任务列表、引用块与脚注
-- 嵌入本地 `![alt](path)` 图片（按页宽/页高自适应缩放），并将 `mermaid` 代码块渲染为图片（本地 mmdc → draw.io CLI → mermaid.ink → 回退代码块）
-- 自动剥离正文中的 emoji（代码块与行内代码原样保留）
-- 使用纯十进制标题编号
-- 在未检测到封面时，可通过 `--reserve-cover` 预留封面页
-- 在未检测到显式目录标题时，可通过 `--auto-toc` 插入 Word 动态目录页
-- 支持按单次运行显式指定首页 / 目录决策，并支持手动输入首页文字
-- 对已有 `.docx` 生成新的刷新输出文件，而不是删除正文后重建
-- 在已有 `.docx` 刷新时保留图片、表格、分页和 section 结构
-- 当对已有 `.docx` 选择 `--without-cover` 时，会把现有首页区域完全冻结，并且只处理检测到的正文边界之后的内容
-- 在已有 `.docx` 刷新时仍支持显式目录决策，但目录处理不得回流修改已冻结的首页区域
-- 对生成型输出，或未进入首页冻结模式的已有 `.docx`，当存在封面页时使用更正式的分页模型：封面无页码，正文节从 1 开始重新编号
-- 输出 `.docx` 文件
-
-参考：`skills/word-expert-formatting/scripts/text_to_docx.py:840`
-
-执行方式：
-
-```bash
-python3 skills/word-expert-formatting/scripts/text_to_docx.py <input-file> [output.docx] [--reserve-cover] [--auto-toc] [--with-cover|--without-cover] [--cover-text <text>] [--with-toc|--without-toc]
-```
-
-如果省略 `output.docx`，`.md` / `.markdown` / `.txt` 输入仍会生成同名 `.docx`，而 `.docx` 输入会在源文件旁边生成 `<stem>.refreshed.docx`。
-
-在本仓库通过 skill 驱动本地 DOCX 工作流时，应先询问：
-1. 是否生成首页
-2. 如果生成首页，首页文字内容是什么（手动输入；默认空）
-3. 是否生成目录页
-
-skill 现在会把这些回答当作本次运行的显式决策：
-- 生成首页 + 输入非空文字：把第一条非空行渲染为首页标题，后续非空行渲染为居中的公司名 / 日期等元信息
-- 生成首页 + 文字为空：生成空白占位首页
-- 不生成首页：本次运行同时关闭自动封面识别与占位封面插入；对已有 `.docx`，这也意味着现有首页区域会被完全冻结，不允许任何首页区域格式、section、footer 或页码改动
-- 目录是否生成：每次都询问，再映射为本次脚本调用参数；当首页区域被冻结时，目录处理必须限制在检测到的正文边界之后
-
-参考：
-- `skills/word-expert-formatting/SKILL.md:127`
-- `skills/word-expert-formatting/scripts/text_to_docx.py:1163`
-
-## 使用前检查
-
-在使用本地 DOCX 工作流前，请先检查：
-- 已安装 Python 3
-- 已安装 `python-docx`
-
-脚本现在会在启动时主动执行这些检查；如果依赖缺失，会直接给出清晰错误信息并退出。
-现在输出文档会从空白 Word 文档直接创建，因此该工作流不再依赖本地模板 `.docx` 文件。
-
-## 运行依赖
-
-- Python 3
-- `python-docx`
-
-参考：`skills/word-expert-formatting/scripts/text_to_docx.py:8`
-
 ## 当前支持的能力
 
 当前脚本支持：
@@ -127,6 +148,7 @@ skill 现在会把这些回答当作本次运行的显式决策：
 - 面向已有 `.docx` 的封面、目录、正文、表格、编号与结构计数核查
 - TXT 段落块
 - 为目录生成提供最小 TXT 标题识别
+- 通过 `--style-config <path>` 或默认的 `config/style.json` 覆盖每级样式，合并到内置默认值上
 
 参考：
 - `skills/word-expert-formatting/scripts/text_to_docx.py:695`
@@ -179,8 +201,16 @@ skill 契约与当前 Python 脚本使用同一种标题编号方案：
 
 参考：
 - `skills/word-expert-formatting/SKILL.md:43`
-- `skills/word-expert-formatting/scripts/text_to_docx.py:336`
-- `skills/word-expert-formatting/scripts/text_to_docx.py:605`
+- `skills/word-expert-formatting/scripts/text_to_docx.py:3455`
+- `skills/word-expert-formatting/scripts/text_to_docx.py:309`
+
+## 局限性
+
+- 尚不支持复杂的内嵌 HTML、远程图片（会渲染为占位符）以及高度定制化的排版
+- `mermaid` 代码块至少需要一种可用的渲染方式（本地 `mmdc`、draw.io CLI，或能访问 `mermaid.ink` 的网络）；如果都不可用，会回退为普通代码块而不是图片
+- `SKILL.md` 是人类可读的契约文档，脚本不会解析它——格式规则的变更必须同时改动 `SKILL.md` 和 `text_to_docx.py` 才会真正影响输出
+
+参考：`skills/word-expert-formatting/SKILL.md:327`
 
 ## 维护规则
 
